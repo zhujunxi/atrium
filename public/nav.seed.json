@@ -1,0 +1,138 @@
+{
+  "items": [
+    {
+      "id": "cat-daily",
+      "type": "folder",
+      "name": "常用",
+      "items": [
+        {
+          "id": "lk-github",
+          "type": "link",
+          "title": "GitHub",
+          "url": "https://github.com",
+          "description": "代码托管与开源社区"
+        },
+        {
+          "id": "lk-gmail",
+          "type": "link",
+          "title": "Gmail",
+          "url": "https://mail.google.com",
+          "description": "谷歌邮箱"
+        },
+        {
+          "id": "lk-bilibili",
+          "type": "link",
+          "title": "哔哩哔哩",
+          "url": "https://www.bilibili.com",
+          "description": "视频弹幕网站"
+        },
+        {
+          "id": "lk-zhihu",
+          "type": "link",
+          "title": "知乎",
+          "url": "https://www.zhihu.com",
+          "description": "中文问答社区"
+        }
+      ]
+    },
+    {
+      "id": "cat-dev",
+      "type": "folder",
+      "name": "开发",
+      "items": [
+        {
+          "id": "lk-nextjs",
+          "type": "link",
+          "title": "Next.js",
+          "url": "https://nextjs.org/docs",
+          "description": "React 全栈框架文档"
+        },
+        {
+          "id": "lk-shadcn",
+          "type": "link",
+          "title": "shadcn/ui",
+          "url": "https://ui.shadcn.com",
+          "description": "组件库"
+        },
+        {
+          "id": "lk-tailwind",
+          "type": "link",
+          "title": "Tailwind CSS",
+          "url": "https://tailwindcss.com/docs",
+          "description": "原子化 CSS 文档"
+        },
+        {
+          "id": "lk-mdn",
+          "type": "link",
+          "title": "MDN",
+          "url": "https://developer.mozilla.org",
+          "description": "Web 技术权威文档"
+        },
+        {
+          "id": "lk-stackoverflow",
+          "type": "link",
+          "title": "Stack Overflow",
+          "url": "https://stackoverflow.com",
+          "description": "程序员问答社区"
+        }
+      ]
+    },
+    {
+      "id": "cat-tools",
+      "type": "folder",
+      "name": "工具",
+      "items": [
+        {
+          "id": "lk-chatgpt",
+          "type": "link",
+          "title": "ChatGPT",
+          "url": "https://chat.openai.com",
+          "description": "AI 对话助手"
+        },
+        {
+          "id": "lk-translate",
+          "type": "link",
+          "title": "Google 翻译",
+          "url": "https://translate.google.com",
+          "description": "在线翻译"
+        },
+        {
+          "id": "lk-excalidraw",
+          "type": "link",
+          "title": "Excalidraw",
+          "url": "https://excalidraw.com",
+          "description": "手绘风格白板"
+        }
+      ]
+    },
+    {
+      "id": "cat-design",
+      "type": "folder",
+      "name": "设计",
+      "items": [
+        {
+          "id": "lk-figma",
+          "type": "link",
+          "title": "Figma",
+          "url": "https://www.figma.com",
+          "description": "协作式界面设计工具"
+        },
+        {
+          "id": "lk-dribbble",
+          "type": "link",
+          "title": "Dribbble",
+          "url": "https://dribbble.com",
+          "description": "设计灵感社区"
+        },
+        {
+          "id": "lk-unsplash",
+          "type": "link",
+          "title": "Unsplash",
+          "url": "https://unsplash.com",
+          "description": "免费高清图库"
+        }
+      ]
+    }
+  ],
+  "updatedAt": "2026-07-23T00:00:00.000Z"
+}

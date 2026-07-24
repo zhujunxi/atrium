@@ -1,0 +1,56 @@
+{
+  "name": "atrium",
+  "version": "0.1.0",
+  "description": "A liquid-glass, macOS Launchpad-style new tab page extension for Chrome.",
+  "type": "module",
+  "license": "MIT",
+  "author": "zhujunxi",
+  "homepage": "https://github.com/zhujunxi/atrium",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/zhujunxi/atrium.git"
+  },
+  "keywords": [
+    "chrome-extension",
+    "new-tab",
+    "newtab",
+    "launchpad",
+    "liquid-glass",
+    "dashboard",
+    "react",
+    "vite"
+  ],
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "build:zip": "vite build && cd dist && zip -r ../atrium.zip . && cd ..",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@radix-ui/react-dialog": "^1.1.2",
+    "@radix-ui/react-label": "^2.1.0",
+    "@radix-ui/react-slot": "^1.1.0",
+    "class-variance-authority": "^0.7.0",
+    "clsx": "^2.1.1",
+    "lucide-react": "^0.446.0",
+    "next-themes": "^0.3.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "sonner": "^1.5.0",
+    "tailwind-merge": "^2.5.2",
+    "tailwindcss-animate": "^1.0.7"
+  },
+  "devDependencies": {
+    "@crxjs/vite-plugin": "^2.0.0-beta.28",
+    "@types/chrome": "^0.0.278",
+    "@types/node": "^20.16.5",
+    "@types/react": "^18.3.8",
+    "@types/react-dom": "^18.3.0",
+    "@vitejs/plugin-react": "^4.3.2",
+    "autoprefixer": "^10.4.20",
+    "postcss": "^8.4.47",
+    "tailwindcss": "^3.4.13",
+    "typescript": "^5.6.2",
+    "vite": "^5.4.8"
+  }
+}

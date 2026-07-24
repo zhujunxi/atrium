@@ -1,0 +1,304 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 220 33% 98%;
+    --foreground: 224 71% 4%;
+    --card: 0 0% 100%;
+    --card-foreground: 224 71% 4%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 224 71% 4%;
+    --primary: 221 83% 53%;
+    --primary-foreground: 210 40% 98%;
+    --secondary: 220 14% 96%;
+    --secondary-foreground: 222 47% 11%;
+    --muted: 220 14% 96%;
+    --muted-foreground: 220 9% 46%;
+    --accent: 220 14% 96%;
+    --accent-foreground: 222 47% 11%;
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 210 40% 98%;
+    --border: 220 13% 91%;
+    --input: 220 13% 91%;
+    --ring: 221 83% 53%;
+    --radius: 0.75rem;
+  }
+
+  .dark {
+    --background: 224 40% 6%;
+    --foreground: 213 31% 91%;
+    --card: 224 36% 9%;
+    --card-foreground: 213 31% 91%;
+    --popover: 224 36% 9%;
+    --popover-foreground: 213 31% 91%;
+    --primary: 217 91% 60%;
+    --primary-foreground: 222 47% 11%;
+    --secondary: 223 30% 14%;
+    --secondary-foreground: 210 40% 98%;
+    --muted: 223 30% 14%;
+    --muted-foreground: 217 15% 60%;
+    --accent: 223 30% 16%;
+    --accent-foreground: 210 40% 98%;
+    --destructive: 0 63% 45%;
+    --destructive-foreground: 210 40% 98%;
+    --border: 223 26% 16%;
+    --input: 223 26% 16%;
+    --ring: 224 76% 55%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-feature-settings: "cv02", "cv03", "cv04";
+  }
+  html,
+  body {
+    /* 触控板双指横滑留给 Launchpad 翻页，避免触发浏览器前进/后退 */
+    overscroll-behavior-x: none;
+  }
+}
+
+@layer components {
+  /* 毛玻璃面板 */
+  .glass {
+    @apply border border-white/60 bg-white/70 backdrop-blur-xl dark:border-white/10 dark:bg-white/[0.04];
+  }
+
+  /* 页面背景光斑 */
+  .bg-aurora {
+    @apply pointer-events-none fixed inset-0 -z-10 overflow-hidden;
+  }
+  .bg-aurora::before,
+  .bg-aurora::after {
+    content: "";
+    position: absolute;
+    width: 55vw;
+    height: 55vw;
+    border-radius: 9999px;
+    filter: blur(120px);
+    opacity: 0.35;
+  }
+  .bg-aurora::before {
+    top: -20vw;
+    right: -15vw;
+    background: radial-gradient(circle, hsl(221 83% 60% / 0.5), transparent 65%);
+  }
+  .bg-aurora::after {
+    bottom: -25vw;
+    left: -15vw;
+    background: radial-gradient(circle, hsl(262 83% 65% / 0.4), transparent 65%);
+  }
+  .dark .bg-aurora::before,
+  .dark .bg-aurora::after {
+    opacity: 0.22;
+  }
+}
+
+/* macOS 液态玻璃控件（参考 liquid-dom 的真折射原理：边缘折射背景 + 顶部弧形高光 + 干净玻璃边） */
+.liquid-glass {
+  isolation: isolate;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.1);
+  /* 降级用：不支持 url() 时的毛玻璃 */
+  backdrop-filter: blur(16px) saturate(180%) brightness(1.05);
+  -webkit-backdrop-filter: blur(16px) saturate(180%) brightness(1.05);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  box-shadow:
+    0 10px 30px rgba(0, 0, 0, 0.28),
+    0 2px 6px rgba(0, 0, 0, 0.2),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.18),
+    inset 0 1px 1px rgba(255, 255, 255, 0.5),
+    inset 0 -1px 1.5px rgba(0, 0, 0, 0.18);
+}
+/* 顶部弧形高光（液态玻璃招牌质感） */
+.liquid-glass::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: radial-gradient(
+    130% 90% at 50% -12%,
+    rgba(255, 255, 255, 0.5) 0%,
+    rgba(255, 255, 255, 0.12) 30%,
+    rgba(255, 255, 255, 0) 55%
+  );
+  pointer-events: none;
+}
+.dark .liquid-glass {
+  background: rgba(0, 0, 0, 0.3);
+  border-color: rgba(255, 255, 255, 0.15);
+  box-shadow:
+    0 10px 30px rgba(0, 0, 0, 0.5),
+    0 2px 6px rgba(0, 0, 0, 0.4),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.18),
+    inset 0 1px 1px rgba(255, 255, 255, 0.35),
+    inset 0 -1px 1.5px rgba(0, 0, 0, 0.5);
+}
+/* 文件夹图标专用：0.75px hairline 细边（用户对比选定方案 D），不影响设置齿轮 */
+.liquid-glass-folder {
+  border: 0.75px solid rgba(255, 255, 255, 0.24);
+  box-shadow:
+    0 10px 30px rgba(0, 0, 0, 0.28),
+    0 2px 6px rgba(0, 0, 0, 0.2),
+    inset 0 0 0 0.75px rgba(255, 255, 255, 0.26),
+    inset 0 1px 1px rgba(255, 255, 255, 0.45),
+    inset 0 -1px 1.5px rgba(0, 0, 0, 0.18);
+}
+.dark .liquid-glass-folder {
+  border: 0.75px solid rgba(255, 255, 255, 0.2);
+  box-shadow:
+    0 10px 30px rgba(0, 0, 0, 0.5),
+    0 2px 6px rgba(0, 0, 0, 0.4),
+    inset 0 0 0 0.75px rgba(255, 255, 255, 0.2),
+    inset 0 1px 1px rgba(255, 255, 255, 0.3),
+    inset 0 -1px 1.5px rgba(0, 0, 0, 0.45);
+}
+
+/* 文件夹展开/收起：macOS 式从图标缩放（用 CSS 类驱动，避免 JS 同帧切换 transition 不生效） */
+.folder-backdrop {
+  opacity: 0;
+  transition: opacity 300ms ease;
+}
+.folder-backdrop.is-open { opacity: 1; }
+.folder-backdrop.is-exit { opacity: 0; }
+
+.folder-zoom {
+  will-change: transform, opacity;
+  backface-visibility: hidden;
+  transform: scale(var(--fz-s, 0.12));
+  transform-origin: var(--fz-ox, 50%) var(--fz-oy, 50%);
+  opacity: 0;
+}
+.folder-zoom.is-open {
+  transform: scale(1);
+  opacity: 1;
+  transition: transform 300ms cubic-bezier(0.32, 0.72, 0, 1), opacity 220ms ease;
+}
+.folder-zoom.is-exit {
+  transform: scale(var(--fz-s, 0.12));
+  transform-origin: var(--fz-ox, 50%) var(--fz-oy, 50%);
+  opacity: 0;
+  transition: transform 300ms cubic-bezier(0.32, 0.72, 0, 1), opacity 220ms ease;
+}
+
+/* 添加/编辑网址弹窗：复用文件夹展开层的「类过渡」思路（CSS transition + is-open 类），
+   避免 @keyframes 动画与液态玻璃 SVG 位移滤镜冲突导致的闪烁 */
+.lp-dialog-backdrop {
+  opacity: 0;
+  transition: opacity 220ms ease;
+}
+.lp-dialog-backdrop.is-open {
+  opacity: 1;
+}
+/* 与 .folder-zoom 同机制：用 CSS 变量携带「从触发点缩放展开」的初始态，
+   避免 @keyframes 与液态玻璃滤镜冲突导致的闪烁 */
+.lp-dialog-panel {
+  will-change: transform, opacity;
+  backface-visibility: hidden;
+  transform: scale(var(--fz-s, 0.12));
+  transform-origin: var(--fz-ox, 50%) var(--fz-oy, 50%);
+  opacity: 0;
+}
+.lp-dialog-panel.is-open {
+  transform: scale(1);
+  opacity: 1;
+  transition: transform 300ms cubic-bezier(0.32, 0.72, 0, 1), opacity 220ms ease;
+}
+.lp-dialog-panel.is-exit {
+  transform: scale(var(--fz-s, 0.12));
+  transform-origin: var(--fz-ox, 50%) var(--fz-oy, 50%);
+  opacity: 0;
+  transition: transform 300ms cubic-bezier(0.32, 0.72, 0, 1), opacity 220ms ease;
+}
+/* 纯模糊变体（无 saturate/brightness）的降级滤镜 */
+.liquid-glass-plain {
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+}
+
+/* macOS 液态玻璃图标蒙版：柔和的顶部折射 + 细边缘内光（低强度，避免亮白反光） */
+.icon-glass {
+  border-radius: inherit;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.16) 0%, rgba(255, 255, 255, 0.04) 26%, rgba(255, 255, 255, 0) 50%),
+    radial-gradient(120% 60% at 50% -8%, rgba(255, 255, 255, 0.2) 0%, rgba(255, 255, 255, 0) 50%);
+  box-shadow:
+    inset 0 0.5px 0 rgba(255, 255, 255, 0.35),
+    inset 0 -0.5px 1px rgba(0, 0, 0, 0.1),
+    inset 1px 0 1.5px -1px rgba(255, 255, 255, 0.12),
+    inset -1px 0 1.5px -1px rgba(255, 255, 255, 0.12);
+}
+.dark .icon-glass {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.1) 0%, rgba(255, 255, 255, 0.03) 26%, rgba(255, 255, 255, 0) 50%),
+    radial-gradient(120% 60% at 50% -8%, rgba(255, 255, 255, 0.16) 0%, rgba(255, 255, 255, 0) 50%);
+  box-shadow:
+    inset 0 0.5px 0 rgba(255, 255, 255, 0.22),
+    inset 0 -0.5px 1px rgba(0, 0, 0, 0.35),
+    inset 1px 0 1.5px -1px rgba(255, 255, 255, 0.08),
+    inset -1px 0 1.5px -1px rgba(255, 255, 255, 0.08);
+}
+
+/* 管理模式：Launchpad 风格图标抖动 */
+@keyframes jiggle {
+  0%,
+  100% {
+    transform: rotate(-1.4deg);
+  }
+  50% {
+    transform: rotate(1.4deg);
+  }
+}
+.animate-jiggle {
+  animation: jiggle 0.28s ease-in-out infinite;
+}
+
+@keyframes fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(6px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+/* 弹窗：从点击位置缩放弹出（transform-origin 由行内样式动态指定） */
+@keyframes pop-in {
+  from {
+    opacity: 0;
+    transform: scale(0.85);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/* 细滚动条 */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-thumb {
+  @apply rounded-full bg-foreground/15;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}

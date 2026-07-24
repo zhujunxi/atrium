@@ -1,135 +1,170 @@
 {
   "items": [
     {
+      "id": "lk-google",
+      "type": "link",
+      "title": "Google",
+      "url": "https://www.google.com",
+      "description": "Search engine"
+    },
+    {
+      "id": "lk-youtube",
+      "type": "link",
+      "title": "YouTube",
+      "url": "https://www.youtube.com",
+      "description": "Video sharing platform"
+    },
+    {
+      "id": "lk-wikipedia",
+      "type": "link",
+      "title": "Wikipedia",
+      "url": "https://www.wikipedia.org",
+      "description": "Free online encyclopedia"
+    },
+    {
+      "id": "lk-x",
+      "type": "link",
+      "title": "X",
+      "url": "https://x.com",
+      "description": "Social network"
+    },
+    {
+      "id": "lk-reddit",
+      "type": "link",
+      "title": "Reddit",
+      "url": "https://www.reddit.com",
+      "description": "Community and discussion"
+    },
+    {
       "id": "cat-daily",
       "type": "folder",
-      "name": "常用",
+      "name": "Daily",
       "items": [
         {
           "id": "lk-github",
           "type": "link",
           "title": "GitHub",
           "url": "https://github.com",
-          "description": "代码托管与开源社区"
+          "description": "Code hosting and open-source community"
         },
         {
           "id": "lk-gmail",
           "type": "link",
           "title": "Gmail",
           "url": "https://mail.google.com",
-          "description": "谷歌邮箱"
+          "description": "Google's email service"
         },
         {
           "id": "lk-bilibili",
           "type": "link",
-          "title": "哔哩哔哩",
+          "title": "Bilibili",
           "url": "https://www.bilibili.com",
-          "description": "视频弹幕网站"
+          "description": "Video and danmaku platform"
         },
         {
           "id": "lk-zhihu",
           "type": "link",
-          "title": "知乎",
+          "title": "Zhihu",
           "url": "https://www.zhihu.com",
-          "description": "中文问答社区"
+          "description": "Chinese Q&A community"
         }
       ]
     },
     {
       "id": "cat-dev",
       "type": "folder",
-      "name": "开发",
+      "name": "Dev",
       "items": [
         {
           "id": "lk-nextjs",
           "type": "link",
           "title": "Next.js",
           "url": "https://nextjs.org/docs",
-          "description": "React 全栈框架文档"
+          "description": "React full-stack framework docs"
         },
         {
           "id": "lk-shadcn",
           "type": "link",
           "title": "shadcn/ui",
           "url": "https://ui.shadcn.com",
-          "description": "组件库"
+          "description": "Component library"
         },
         {
           "id": "lk-tailwind",
           "type": "link",
           "title": "Tailwind CSS",
           "url": "https://tailwindcss.com/docs",
-          "description": "原子化 CSS 文档"
+          "description": "Utility-first CSS docs"
         },
         {
           "id": "lk-mdn",
           "type": "link",
           "title": "MDN",
           "url": "https://developer.mozilla.org",
-          "description": "Web 技术权威文档"
+          "description": "Authoritative web technology docs"
         },
         {
           "id": "lk-stackoverflow",
           "type": "link",
           "title": "Stack Overflow",
           "url": "https://stackoverflow.com",
-          "description": "程序员问答社区"
+          "description": "Programmer Q&A community"
         }
       ]
     },
     {
       "id": "cat-tools",
       "type": "folder",
-      "name": "工具",
+      "name": "Tools",
       "items": [
         {
           "id": "lk-chatgpt",
           "type": "link",
           "title": "ChatGPT",
           "url": "https://chat.openai.com",
-          "description": "AI 对话助手"
+          "description": "AI conversational assistant"
         },
         {
           "id": "lk-translate",
           "type": "link",
-          "title": "Google 翻译",
+          "title": "Google Translate",
           "url": "https://translate.google.com",
-          "description": "在线翻译"
+          "description": "Online translation"
         },
         {
           "id": "lk-excalidraw",
           "type": "link",
           "title": "Excalidraw",
           "url": "https://excalidraw.com",
-          "description": "手绘风格白板"
+          "description": "Hand-drawn style whiteboard"
         }
       ]
     },
     {
       "id": "cat-design",
       "type": "folder",
-      "name": "设计",
+      "name": "Design",
       "items": [
         {
           "id": "lk-figma",
           "type": "link",
           "title": "Figma",
           "url": "https://www.figma.com",
-          "description": "协作式界面设计工具"
+          "description": "Collaborative interface design tool"
         },
         {
           "id": "lk-dribbble",
           "type": "link",
           "title": "Dribbble",
           "url": "https://dribbble.com",
-          "description": "设计灵感社区"
+          "description": "Design inspiration community"
         },
         {
           "id": "lk-unsplash",
           "type": "link",
           "title": "Unsplash",
           "url": "https://unsplash.com",
-          "description": "免费高清图库"
+          "description": "Free high-resolution photo library"
         }
       ]
     }

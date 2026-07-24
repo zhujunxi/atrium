@@ -13,13 +13,20 @@ interface BingImage {
 }
 
 // 扩展页无 CORS 限制（配合 host_permissions），直连 Bing 每日图接口
-const BING = "https://www.bing.com/HPImageArchive.aspx?format=js&idx=0&n=8&mkt=zh-CN";
+// mkt 跟随界面语言：英文界面取 en-US（英文描述），中文界面取 zh-CN（中文描述）
 const BING_BASE = "https://www.bing.com";
-const CACHE_KEY = "bing-cache";
 const CACHE_TTL = 30 * 60 * 1000; // 30 分钟
 
-async function fetchBing(): Promise<BingImage[]> {
-  const res = await fetch(BING, { cache: "no-store" });
+function bingUrl(mkt: string) {
+  return `https://www.bing.com/HPImageArchive.aspx?format=js&idx=0&n=8&mkt=${mkt}`;
+}
+
+function mktForLocale(locale: string): string {
+  return locale === "zh-CN" ? "zh-CN" : "en-US";
+}
+
+async function fetchBing(mkt: string): Promise<BingImage[]> {
+  const res = await fetch(bingUrl(mkt), { cache: "no-store" });
   const data = (await res.json()) as {
     images?: { url?: string; title?: string; copyright?: string; copyrightlink?: string }[];
   };
@@ -35,7 +42,7 @@ async function fetchBing(): Promise<BingImage[]> {
 
 /** 桌面壁纸：默认 Bing 今日图，可随机切换 / 自动轮播（切换时交叉淡入，无灰屏闪烁） */
 export function DesktopBackground() {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   const [images, setImages] = React.useState<BingImage[]>([]);
   const [index, setIndex] = React.useState(0);
   const [imgUrl, setImgUrl] = React.useState(""); // 当前已显示的图（始终为已加载）
@@ -43,17 +50,22 @@ export function DesktopBackground() {
 
   React.useEffect(() => {
     let active = true;
+    const mkt = mktForLocale(locale);
+    const cacheKey = `bing-cache-${locale}`;
     (async () => {
       try {
-        // 先用缓存快速上屏，再按 TTL 判断是否刷新
-        const cached = await chrome.storage.local.get(CACHE_KEY);
-        const entry = cached[CACHE_KEY] as { at: number; images: BingImage[] } | undefined;
+        // 先用对应语言的缓存快速上屏，再按 TTL 判断是否刷新
+        const cached = await chrome.storage.local.get(cacheKey);
+        const entry = cached[cacheKey] as { at: number; images: BingImage[] } | undefined;
         if (entry?.images?.length && active) setImages(entry.images);
         if (!entry || Date.now() - entry.at > CACHE_TTL) {
-          const imgs = await fetchBing();
+          const imgs = await fetchBing(mkt);
           if (imgs.length) {
-            await chrome.storage.local.set({ [CACHE_KEY]: { at: Date.now(), images: imgs } });
-            if (active) setImages(imgs);
+            await chrome.storage.local.set({ [cacheKey]: { at: Date.now(), images: imgs } });
+            if (active) {
+              setImages(imgs);
+              setIndex(0);
+            }
           }
         }
       } catch {
@@ -63,7 +75,7 @@ export function DesktopBackground() {
     return () => {
       active = false;
     };
-  }, []);
+  }, [locale]);
 
   const current = images[index];
 

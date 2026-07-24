@@ -14,7 +14,7 @@
 
 ## 简介
 
-Atrium 把浏览器的新标签页变成一块「玻璃中庭」——每天一张 Bing 壁纸作背景，你收藏的网站以 macOS Launchpad 的方式陈列其上：全出血 squircle 图标、液态玻璃质感、拖拽排序、拖叠成文件夹、分页翻动。所有数据都存在本地，不上传任何服务器。
+Atrium 把浏览器的新标签页变成一块「玻璃中庭」——每天一张 Bing 壁纸作背景，你收藏的网站以 macOS Launchpad 的方式陈列其上：全出血 squircle 图标、液态玻璃质感、拖拽排序、拖叠成文件夹、分页翻动。所有数据都存在本地，不上传任何服务器。其视觉与交互灵感来自 macOS Launchpad 与 iOS 26 的 Liquid Glass。
 
 ## 功能
 
@@ -105,10 +105,6 @@ atrium/
    ├─ components/         # UI 组件
    └─ lib/                # store（存储）/ favicon / pager / glass 等
 ```
-
-## 致谢
-
-视觉与交互灵感来自 macOS Launchpad 与 iOS 26 的 Liquid Glass。
 
 ## 许可证
 

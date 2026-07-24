@@ -14,7 +14,7 @@
 
 ## Overview
 
-Atrium replaces your new tab with a glass atrium for the web: a daily Bing wallpaper, your links laid out Launchpad-style with liquid-glass icons, drag-to-reorder, drag-to-fold folders, and paged navigation. Everything stays on your device.
+Atrium replaces your new tab with a glass atrium for the web: a daily Bing wallpaper, your links laid out Launchpad-style with liquid-glass icons, drag-to-reorder, drag-to-fold folders, and paged navigation. Everything stays on your device. Visual and interaction inspiration comes from macOS Launchpad and iOS 26 Liquid Glass.
 
 ## Features
 
@@ -105,10 +105,6 @@ atrium/
    ├─ components/         # UI components
    └─ lib/                # store (storage) / favicon / pager / glass etc.
 ```
-
-## Acknowledgements
-
-Visual and interaction inspiration from macOS Launchpad and iOS 26 Liquid Glass.
 
 ## License
 

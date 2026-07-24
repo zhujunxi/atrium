@@ -28,7 +28,26 @@ Atrium 把浏览器的新标签页变成一块「玻璃中庭」——每天一�
 - 💾 **纯本地存储** — 数据存 `chrome.storage.local`，支持一键导出 / 导入备份
 - 🔒 **隐私优先** — 默认仅需 Bing 一个主机权限；高清图标为可选能力，按需申请
 
-## Install (from source)
+## Install
+
+Atrium 提供三种安装方式，按需选择。
+
+### 方式一 · Chrome 网上应用店（推荐）
+
+> 🚧 即将上线。发布后点击以下按钮即可一键安装：
+>
+> [![Chrome Web Store](https://img.shields.io/badge/Chrome%20Web%20Store-即将上线-4285F4?logo=googlechrome&logoColor=white)](https://chrome.google.com/webstore)
+>
+> 商店版会自动更新，无需手动操作。
+
+### 方式二 · 从 Release 下载预构建包
+
+1. 前往 [Releases 页面](https://github.com/zhujunxi/atrium/releases) 下载最新的 `atrium.zip`。
+2. 解压得到 `dist/` 目录。
+3. 在 Chrome 打开 `chrome://extensions` → 开启右上角「开发者模式」→「加载已解压的扩展程序」→ 选择解压出来的 `dist/` 目录。
+4. 打开一个新标签页（`Cmd/Ctrl + T`）即可看到 Atrium。
+
+### 方式三 · 自行构建（开发者）
 
 ```bash
 git clone https://github.com/zhujunxi/atrium.git

@@ -3,7 +3,7 @@
 import * as React from "react";
 import { X } from "lucide-react";
 import { cn } from "@/lib/utils";
-import type { NavFolder, NavLink } from "@/lib/types";
+import type { NavLink } from "@/lib/types";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { LiquidGlass } from "@/components/liquid-glass";
@@ -28,7 +28,8 @@ export interface LinkFormValues {
 
 interface LinkDialogProps {
   state: LinkDialogState;
-  folders: NavFolder[];
+  /** 扁平化的文件夹选项（含缩进），用于「位置」下拉 */
+  folders: { id: string; name: string }[];
   onOpenChange: (open: boolean) => void;
   onSubmit: (values: LinkFormValues) => void;
 }

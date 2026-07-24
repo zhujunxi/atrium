@@ -9,7 +9,7 @@ Atrium is a Chrome extension that replaces your new tab page. **We do not collec
 - **Network requests.** Atrium makes only the requests necessary to function:
   - Fetching the daily Bing wallpaper from `https://www.bing.com` (required host permission).
   - Fetching site icons. By default these come from the DuckDuckGo icon service (no extra permission). Only if you enable **"HD icons"** do we request the optional `<all_urls>` permission to read a site's own `apple-touch-icon`; this is on-demand and revocable at any time.
-- **Permissions used.** `storage` (save locally), `https://www.bing.com/*` (wallpaper), and optional `<all_urls>` (HD icons, only when you turn it on).
+- **Permissions used.** `storage` (save locally), `https://www.bing.com/*` (wallpaper), `bookmarks` (sync your Chrome bookmarks into the new tab — read your own bookmarks and write back any edits you make; nothing leaves your device), and optional `<all_urls>` (HD icons, only when you turn it on).
 - **Children.** Atrium does not knowingly collect data from anyone.
 
 If you have questions, please open an issue on the project repository.
@@ -23,7 +23,7 @@ Atrium 是一款接管 Chrome 新标签页的扩展程序。**我们不会收集
 - **网络请求。** Atrium 仅发起功能所必需的网络请求：
   - 从 `https://www.bing.com` 获取每日壁纸（必需主机权限）。
   - 获取网站图标。默认走 DuckDuckGo 图标服务（无需额外权限）；仅当您开启「高清图标」时，才会申请可选权限 `<all_urls>` 以读取目标站自身的 `apple-touch-icon`，该权限按需申请、可随时撤销。
-- **所用权限。** `storage`（本地保存）、`https://www.bing.com/*`（壁纸），以及可选 `<all_urls>`（高清图标，仅在您开启时使用）。
+- **所用权限。** `storage`（本地保存）、`https://www.bing.com/*`（壁纸）、`bookmarks`（将 Chrome 收藏夹同步进新标签页——只读您自己的书签、并把您在 Atrium 里的增改写回 Chrome，数据不出本机），以及可选 `<all_urls>`（高清图标，仅在您开启时使用）。
 - **未成年人。** Atrium 不会有意收集任何人的数据。
 
 如有疑问，请在项目仓库提交 Issue。

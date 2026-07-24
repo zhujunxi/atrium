@@ -83,6 +83,7 @@ Atrium collects and uploads nothing — no analytics, no tracking of any kind.
 | --- | --- | --- |
 | `storage` | Save your nav data and settings | Required |
 | `https://www.bing.com/*` | Fetch the daily wallpaper | Required (host) |
+| `bookmarks` | Sync your Chrome bookmarks into the new tab (read your bookmarks and write back edits you make in Atrium) | Required |
 | `<all_urls>` | Fetch high-res site icons when "HD icons" is on | **Optional** — requested only when you toggle it on; revocable anytime |
 
 Site icons default to the [DuckDuckGo icon service](https://icons.duckduckgo.com) (no host permission needed). Only when you enable "HD icons" in Settings is the `<all_urls>` permission requested, used to parse the target site's `apple-touch-icon` and similar high-res icons.

@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Download, Laptop, Moon, Plus, Settings, Sparkles, Sun, Upload } from "lucide-react";
+import { Download, Laptop, Moon, Plus, RefreshCw, Settings, Sparkles, Sun, Upload } from "lucide-react";
 import { useTheme } from "next-themes";
 import { toast } from "sonner";
 import { LiquidGlass } from "@/components/liquid-glass";
@@ -20,9 +20,13 @@ const APPEARANCE = [
 export function SettingsMenu({
   onImported,
   onAdd,
+  onSync,
+  lastSyncAt,
 }: {
   onImported: (data: NavData) => void;
   onAdd: (origin: { x: number; y: number }) => void;
+  onSync: () => void;
+  lastSyncAt: number | null;
 }) {
   const [open, setOpen] = React.useState(false);
   const { theme, setTheme, resolvedTheme } = useTheme();
@@ -221,6 +225,28 @@ export function SettingsMenu({
                 />
               </span>
             </button>
+
+            <div className="my-2 h-px bg-white/15" />
+
+            <p className="px-2 pb-1.5 text-[11px] font-medium uppercase tracking-wide text-white/55">
+              {t("settings.bookmarks")}
+            </p>
+            <div className="px-1 pb-1 text-[11px] leading-snug text-white/55">
+              {t("settings.autoSync")}
+            </div>
+            <button
+              type="button"
+              onClick={onSync}
+              className="flex w-full items-center gap-2.5 rounded-2xl px-3 py-2.5 text-sm text-white/85 transition-colors hover:bg-white/15 hover:text-white"
+            >
+              <RefreshCw className="h-4 w-4" />
+              <span className="flex-1 text-left">{t("settings.syncNow")}</span>
+            </button>
+            {lastSyncAt != null && (
+              <p className="px-3 pb-1 pt-0.5 text-[11px] text-white/45">
+                {t("settings.lastSync")}: {new Date(lastSyncAt).toLocaleString()}
+              </p>
+            )}
 
             <div className="my-2 h-px bg-white/15" />
 

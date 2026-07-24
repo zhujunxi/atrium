@@ -8,6 +8,10 @@ export const en: Dict = {
 
   "settings.appearance": "Appearance",
   "settings.hdIcons": "HD Icons",
+  "settings.bookmarks": "Chrome Bookmarks",
+  "settings.autoSync": "Auto-syncs when you open a new tab",
+  "settings.syncNow": "Sync Now",
+  "settings.lastSync": "Last synced",
   "settings.data": "Data",
   "settings.language": "Language",
   "settings.export": "Export Backup",
@@ -30,6 +34,9 @@ export const en: Dict = {
   "toast.emptyFolderDeleted": "Empty folder deleted",
   "toast.linkUpdated": "Link updated",
   "toast.linkAdded": "Link added",
+  "toast.syncDone": "Bookmarks synced",
+  "toast.syncNoChange": "Already up to date",
+  "toast.syncFail": "Sync failed",
 
   "a11y.add": "Add",
   "a11y.settings": "Settings",
@@ -40,6 +47,7 @@ export const en: Dict = {
   "a11y.search": "Search",
   "a11y.deleteLink": "Delete {title}",
   "a11y.dissolveFolder": "Dissolve folder {title}",
+  "a11y.back": "Back to previous folder",
   "a11y.page": "Page {n} of {m}",
 
   "dialog.addTitle": "Add Link",

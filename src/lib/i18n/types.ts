@@ -9,6 +9,10 @@ export const KEYS = [
   // Settings menu
   "settings.appearance",
   "settings.hdIcons",
+  "settings.bookmarks",
+  "settings.autoSync",
+  "settings.syncNow",
+  "settings.lastSync",
   "settings.data",
   "settings.language",
   "settings.export",
@@ -31,6 +35,9 @@ export const KEYS = [
   "toast.emptyFolderDeleted",
   "toast.linkUpdated",
   "toast.linkAdded",
+  "toast.syncDone",
+  "toast.syncNoChange",
+  "toast.syncFail",
   // Accessibility labels
   "a11y.add",
   "a11y.settings",
@@ -41,6 +48,7 @@ export const KEYS = [
   "a11y.search",
   "a11y.deleteLink",
   "a11y.dissolveFolder",
+  "a11y.back",
   "a11y.page",
   // Link dialog
   "dialog.addTitle",

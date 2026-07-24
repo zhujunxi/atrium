@@ -27,6 +27,7 @@ export default defineManifest({
   },
   permissions: [
     "storage", // 导航数据 chrome.storage.local
+    "bookmarks", // 同步 Chrome 收藏夹（打开/刷新新标签时双向对账）
   ],
   // 默认仅需 Bing（每日壁纸），主机权限极小
   host_permissions: ["https://www.bing.com/*"],

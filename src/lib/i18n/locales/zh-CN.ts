@@ -8,6 +8,10 @@ export const zhCN: Dict = {
 
   "settings.appearance": "外观",
   "settings.hdIcons": "高清图标",
+  "settings.bookmarks": "Chrome 收藏夹",
+  "settings.autoSync": "打开新标签页时自动同步",
+  "settings.syncNow": "立即同步",
+  "settings.lastSync": "上次同步",
   "settings.data": "数据",
   "settings.language": "语言",
   "settings.export": "导出备份",
@@ -30,6 +34,9 @@ export const zhCN: Dict = {
   "toast.emptyFolderDeleted": "已删除空文件夹",
   "toast.linkUpdated": "网址已更新",
   "toast.linkAdded": "网址已添加",
+  "toast.syncDone": "收藏夹已同步",
+  "toast.syncNoChange": "已经是最新",
+  "toast.syncFail": "同步失败",
 
   "a11y.add": "新建",
   "a11y.settings": "设置",
@@ -40,6 +47,7 @@ export const zhCN: Dict = {
   "a11y.search": "搜索",
   "a11y.deleteLink": "删除 {title}",
   "a11y.dissolveFolder": "解散文件夹 {title}",
+  "a11y.back": "返回上一级文件夹",
   "a11y.page": "第 {n} 页，共 {m} 页",
 
   "dialog.addTitle": "添加网址",

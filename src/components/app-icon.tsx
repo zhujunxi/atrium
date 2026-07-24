@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { cn, gradientFor } from "@/lib/utils";
 import { useFavicon } from "@/lib/favicon";
-import type { NavLink } from "@/lib/types";
+import type { NavItem, NavLink } from "@/lib/types";
 import { LiquidGlass } from "@/components/liquid-glass";
 
 /**
@@ -129,11 +129,14 @@ export function FolderIcon({
   className,
 }: {
   name: string;
-  items: NavLink[];
+  /** 可嵌套：链接与子文件夹混排；预览宫格只取其中的链接 */
+  items: NavItem[];
   size?: number;
   className?: string;
 }) {
-  const preview = items.slice(0, 9);
+  const preview = items
+    .filter((i): i is NavLink => i.type === "link")
+    .slice(0, 9);
   // 允许外层通过 --lp-icon 覆盖尺寸；保持原 size 作为回退
   const sizeVar = `var(--lp-icon, ${size}px)`;
   const pad = `calc(${sizeVar} * 0.15)`;

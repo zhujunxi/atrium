@@ -15,6 +15,7 @@ import { AppIcon, FolderIcon } from "@/components/app-icon";
 import { LiquidGlass } from "@/components/liquid-glass";
 import { LinkDialog, type LinkDialogState, type LinkFormValues } from "@/components/dialogs/link-dialog";
 import { useI18n, translate } from "@/lib/i18n";
+import { syncBookmarks, addDetached } from "@/lib/bookmarks";
 
 const ENGINES = [
   { key: "bing", nameKey: "engine.bing", url: (q: string) => `https://www.bing.com/search?q=${encodeURIComponent(q)}` },
@@ -79,7 +80,11 @@ type Container = "root" | string;
 function findContainer(items: NavItem[], id: string): Container | null {
   if (items.some((i) => i.id === id)) return "root";
   for (const f of items) {
-    if (f.type === "folder" && f.items.some((l) => l.id === id)) return f.id;
+    if (f.type === "folder") {
+      if (f.items.some((l) => l.id === id)) return f.id;
+      const r = findContainer(f.items, id);
+      if (r) return r;
+    }
   }
   return null;
 }
@@ -88,8 +93,19 @@ function findItem(items: NavItem[], id: string): NavItem | null {
   for (const i of items) {
     if (i.id === id) return i;
     if (i.type === "folder") {
-      const l = i.items.find((x) => x.id === id);
-      if (l) return l;
+      const r = findItem(i.items, id);
+      if (r) return r;
+    }
+  }
+  return null;
+}
+
+function findFolder(items: NavItem[], id: string): NavFolder | null {
+  for (const i of items) {
+    if (i.type === "folder" && i.id === id) return i;
+    if (i.type === "folder") {
+      const r = findFolder(i.items, id);
+      if (r) return r;
     }
   }
   return null;
@@ -97,8 +113,43 @@ function findItem(items: NavItem[], id: string): NavItem | null {
 
 function containerArr(items: NavItem[], c: Container): { id: string }[] {
   if (c === "root") return items;
-  const f = items.find((i): i is NavFolder => i.type === "folder" && i.id === c);
+  const f = findFolder(items, c);
   return f ? f.items : [];
+}
+
+/** 返回 id 所在容器的下标（容器内为 folder 或 root 的 items 数组） */
+function indexInContainer(items: NavItem[], c: Container, id: string): number {
+  const arr = c === "root" ? items : findFolder(items, c)?.items ?? [];
+  return arr.findIndex((x) => x.id === id);
+}
+
+function findParent(items: NavItem[], id: string, parent: Container = "root"): Container | null {
+  for (const i of items) {
+    if (i.type === "folder" && i.id === id) return parent;
+    if (i.type === "folder") {
+      const r = findParent(i.items, id, i.id);
+      if (r !== null) return r;
+    }
+  }
+  return null;
+}
+
+/** 在容器内指定下标插入单个 item（递归定位嵌套容器） */
+function insertAt(items: NavItem[], c: Container, index: number, item: NavItem): NavItem[] {
+  if (c === "root") {
+    const next = [...items];
+    next.splice(Math.max(0, Math.min(index, next.length)), 0, item);
+    return next;
+  }
+  return items.map((f) => {
+    if (f.type === "folder" && f.id === c) {
+      const arr = [...f.items];
+      arr.splice(Math.max(0, Math.min(index, arr.length)), 0, item);
+      return { ...f, items: arr };
+    }
+    if (f.type === "folder") return { ...f, items: insertAt(f.items, c, index, item) };
+    return f;
+  });
 }
 
 /** 同一容器内把 id 移动到 toIndex（toIndex 为移除自身后的目标下标） */
@@ -112,7 +163,9 @@ function moveWithin(items: NavItem[], c: Container, id: string, toIndex: number)
     return next;
   }
   return items.map((f) => {
-    if (f.type !== "folder" || f.id !== c) return f;
+    if (f.type !== "folder" || f.id !== c) {
+      return f.type === "folder" ? { ...f, items: moveWithin(f.items, c, id, toIndex) } : f;
+    }
     const from = f.items.findIndex((l) => l.id === id);
     if (from < 0) return f;
     const arr = [...f.items];
@@ -124,48 +177,126 @@ function moveWithin(items: NavItem[], c: Container, id: string, toIndex: number)
 
 function removeFrom(items: NavItem[], c: Container, id: string): NavItem[] {
   if (c === "root") return items.filter((i) => i.id !== id);
-  return items.map((f) =>
-    f.type === "folder" && f.id === c ? { ...f, items: f.items.filter((l) => l.id !== id) } : f
-  );
+  return items.map((f) => {
+    if (f.type === "folder" && f.id === c) return { ...f, items: f.items.filter((l) => l.id !== id) };
+    if (f.type === "folder") return { ...f, items: removeFrom(f.items, c, id) };
+    return f;
+  });
 }
 
 function pruneEmptyFolders(items: NavItem[]): NavItem[] {
-  return items.filter((i) => i.type !== "folder" || i.items.length > 0);
+  return items
+    .map((i) => (i.type === "folder" ? { ...i, items: pruneEmptyFolders(i.items) } : i))
+    .filter((i) => i.type !== "folder" || i.items.length > 0);
 }
 
-function insertLink(items: NavItem[], folderId: string | null, link: NavLink): NavItem[] {
-  if (!folderId) return [...items, link];
+/** 把 chrome 同步链接「本地另存」为独立副本：丢掉 bmId/source/dirty，换上新 id。
+ *  原 Chrome 书签保持不变、继续同步，避免重新镜像时被重复导入。 */
+function detachLink(link: NavLink): NavLink {
+  return {
+    id: newId("lk"),
+    type: "link",
+    title: link.title,
+    url: link.url,
+    description: link.description,
+    source: "manual",
+  };
+}
+
+/** 递归地把任意 chrome 同步项（链接或嵌套文件夹）本地另存为独立副本 */
+function detachItem(item: NavItem): NavItem {
+  if (item.type === "link") return detachLink(item);
+  return {
+    id: newId("fd"),
+    type: "folder",
+    name: item.name,
+    items: item.items.map(detachItem),
+    source: "manual",
+  };
+}
+
+function insertLink(items: NavItem[], folderId: string | null, item: NavItem): NavItem[] {
+  if (!folderId) return [...items, item];
   return items.map((f) =>
-    f.type === "folder" && f.id === folderId ? { ...f, items: [...f.items, link] } : f
+    f.type === "folder" && f.id === folderId ? { ...f, items: [...f.items, item] } : f
   );
+}
+
+/** 递归地在树中给某文件夹打补丁（改名 / 标 dirty 等） */
+function patchFolder(items: NavItem[], id: string, patch: Partial<NavFolder>): NavItem[] {
+  return items.map((f) => {
+    if (f.type === "folder") {
+      if (f.id === id) return { ...f, ...patch };
+      return { ...f, items: patchFolder(f.items, id, patch) };
+    }
+    return f;
+  });
+}
+
+/** 把文件夹树拍平成可选列表（带缩进），供「添加链接」的位置下拉用 */
+function flattenFolderOptions(
+  items: NavItem[],
+  depth = 0,
+  out: { id: string; name: string }[] = []
+): { id: string; name: string }[] {
+  for (const i of items) {
+    if (i.type === "folder") {
+      out.push({ id: i.id, name: depth === 0 ? i.name : " ".repeat(depth) + i.name });
+      flattenFolderOptions(i.items, depth + 1, out);
+    }
+  }
+  return out;
 }
 
 /** 桌面上把 dragged 叠放到 target 上，生成新文件夹（占据 target 原位置） */
 function mergeIntoFolder(items: NavItem[], dragId: string, targetId: string): NavItem[] {
-  const dragged = items.find((i) => i.id === dragId);
-  const target = items.find((i) => i.id === targetId);
+  const dragged = findItem(items, dragId);
+  const target = findItem(items, targetId);
   if (!dragged || !target || dragged.type !== "link" || target.type !== "link") return items;
+  // 涉及 chrome 同步项 → 本地另存为独立副本（原 chrome 书签保留）
+  const dDet = dragged.bmId ? detachLink(dragged) : dragged;
+  const tDet = target.bmId ? detachLink(target) : target;
+  if (dragged.bmId) addDetached([dragged.bmId]);
+  if (target.bmId) addDetached([target.bmId]);
   const folder: NavFolder = {
     id: newId("fd"),
     type: "folder",
     name: translate("common.newFolder"),
-    items: [target, dragged],
+    items: [tDet, dDet],
+    source: "manual",
   };
-  const targetIdx = items.findIndex((i) => i.id === targetId);
-  const next = items.filter((i) => i.id !== dragId && i.id !== targetId);
-  const removedBefore = items.filter(
-    (i, idx) => idx < targetIdx && (i.id === dragId || i.id === targetId)
-  ).length;
-  next.splice(Math.max(0, targetIdx - removedBefore), 0, folder);
+  const targetContainer = findContainer(items, targetId) ?? "root";
+  const targetIdx = indexInContainer(items, targetContainer, targetId);
+  let next = removeFrom(items, targetContainer, targetId);
+  next = removeFrom(next, findContainer(next, dragId) ?? "root", dragId);
+  next = insertAt(next, targetContainer, targetIdx, folder);
   return next;
 }
 
 function dissolveFolder(items: NavItem[], folderId: string): NavItem[] {
-  const idx = items.findIndex((i) => i.id === folderId && i.type === "folder");
-  if (idx < 0) return items;
-  const folder = items[idx] as NavFolder;
-  const next = items.filter((i) => i.id !== folderId);
-  next.splice(Math.min(idx, next.length), 0, ...folder.items);
+  const folder = findFolder(items, folderId);
+  if (!folder) return items;
+  // chrome 文件夹「解散」= 双向删除：子项（含嵌套子文件夹）本地另存为副本提升到父容器，
+  // 而原 chrome 文件夹本身会从 Chrome 也一并移除（与删除 chrome 链接一致，保持双向一致）。
+  // 子项先 detach，避免文件夹删除失败时被重新镜像重复导入。
+  const detached = folder.items.map(detachItem);
+  // 递归收集「子项」的 chrome bmId 并 detach（文件夹自身的 bmId 不 detach，留待同步时从 Chrome 删除）
+  const bmIds: string[] = [];
+  const collect = (arr: NavItem[]) => {
+    for (const it of arr) {
+      if (it.bmId) bmIds.push(it.bmId);
+      if (it.type === "folder") collect(it.items);
+    }
+  };
+  collect(folder.items);
+  if (bmIds.length) addDetached(bmIds);
+  const parent = findParent(items, folderId) ?? "root";
+  const idx = indexInContainer(items, parent, folderId);
+  let next = removeFrom(items, parent, folderId);
+  // 按原顺序把子项插回父容器
+  detached.forEach((it, i) => {
+    next = insertAt(next, parent, idx + i, it);
+  });
   return next;
 }
 
@@ -206,6 +337,10 @@ export function NavApp({ initialData }: { initialData: NavData }) {
   const [originRect, setOriginRect] = React.useState<DOMRect | null>(null);
   const [drag, setDrag] = React.useState<DragState | null>(null);
   const [linkDialog, setLinkDialog] = React.useState<LinkDialogState>({ open: false, folderId: null });
+  /** Chrome 收藏夹同步状态（上次同步时间戳），用于设置面板展示 */
+  const [syncInfo, setSyncInfo] = React.useState<{ lastSyncAt: number | null }>({ lastSyncAt: null });
+  /** 防止自动同步与手动同步并发 */
+  const syncGuardRef = React.useRef(false);
   /** Launchpad 分页：当前页码（由 pager 物理层回报） */
   const [page, setPage] = React.useState(0);
 
@@ -286,6 +421,44 @@ export function NavApp({ initialData }: { initialData: NavData }) {
     }, 350);
   }, []);
 
+  /* ---------- Chrome 收藏夹同步 ---------- */
+
+  const runSync = React.useCallback(async (force: boolean) => {
+    if (syncGuardRef.current) return;
+    syncGuardRef.current = true;
+    try {
+      const res = await syncBookmarks(itemsRef.current, { force });
+      if (res.changed) {
+        setItems(res.items);
+        setUpdatedAt(res.updatedAt);
+      }
+      setSyncInfo({ lastSyncAt: Date.parse(res.updatedAt) });
+      return res;
+    } finally {
+      syncGuardRef.current = false;
+    }
+  }, []);
+
+  // 打开 / 刷新新标签页时自动同步一次（受节流保护，连开多标签不会狂跑）
+  React.useEffect(() => {
+    runSync(false).catch(() => {});
+    // 仅在挂载时触发一次
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const handleSync = React.useCallback(async () => {
+    try {
+      const res = await runSync(true);
+      if (res) {
+        const n = res.counts.added + res.counts.updated + res.counts.removed;
+        if (n > 0) toast.success(t("toast.syncDone"));
+        else toast.success(t("toast.syncNoChange"));
+      }
+    } catch {
+      toast.error(t("toast.syncFail"));
+    }
+  }, [t]);
+
   /* ---------- 指针编排：长按进编辑 / 拖拽 / 点击 ---------- */
 
   // useCallback 固定引用：配合 LpItem 的 memo，翻页码变化时图标不整树重渲染
@@ -344,8 +517,14 @@ export function NavApp({ initialData }: { initialData: NavData }) {
           // 拖出文件夹 → 放到桌面末尾；空文件夹自动移除
           const dragged = findItem(next, d.id);
           if (dragged && dragged.type === "link") {
+            // 从 chrome 文件夹拖出 → 本地另存，原 chrome 书签保留
+            const fromFolder = next.find(
+              (f) => f.type === "folder" && f.id === d.container && f.bmId != null
+            );
+            const placed = dragged.bmId && fromFolder ? detachLink(dragged) : dragged;
+            if (dragged.bmId && fromFolder) addDetached([dragged.bmId]);
             next = removeFrom(next, d.container, d.id);
-            next = [...next, dragged];
+            next = [...next, placed];
             next = pruneEmptyFolders(next);
             if (openFolderRef.current && !next.some((f) => f.id === openFolderRef.current)) {
               setOpenFolderId(null);
@@ -691,33 +870,56 @@ export function NavApp({ initialData }: { initialData: NavData }) {
     [persist]
   );
 
-  function handleRenameFolder(name: string) {
-    const id = openFolderRef.current;
-    if (!id) return;
-    persist(itemsRef.current.map((f) => (f.type === "folder" && f.id === id ? { ...f, name } : f)));
+  function handleRenameFolder(id: string, name: string) {
+    const folder = findFolder(itemsRef.current, id);
+    if (!folder) return;
+    // chrome 文件夹改名 → 标 dirty 写回 Chrome
+    const patch: Partial<NavFolder> = folder.bmId ? { name, dirty: true } : { name };
+    persist(patchFolder(itemsRef.current, id, patch));
+  }
+
+  function handleAddFolder(parentId: string | null) {
+    const parent = parentId ? findFolder(itemsRef.current, parentId) : null;
+    const isChrome = !!parent && parent.bmId != null;
+    const folder: NavFolder = {
+      id: newId("fd"),
+      type: "folder",
+      name: translate("common.newFolder"),
+      items: [],
+      ...(isChrome ? { source: "chrome", dirty: true } : {}),
+    };
+    const next = insertLink(itemsRef.current, parentId, folder);
+    persist(next);
+    toast.success(t("toast.folderCreated"));
   }
 
   function handleLinkSubmit(values: LinkFormValues) {
     const { initial } = linkDialog;
     let next = itemsRef.current;
     if (initial) {
+      // 编辑：保留 bmId/source；若是 chrome 同步项则标 dirty 写回 Chrome
       const link: NavLink = {
         ...initial,
         title: values.title,
         url: values.url,
         description: values.description || undefined,
+        ...(initial.bmId ? { dirty: true } : {}),
       };
       const c = findContainer(next, initial.id);
       next = removeFrom(next, c ?? "root", initial.id);
       next = insertLink(next, values.folderId, link);
       toast.success(t("toast.linkUpdated"));
     } else {
+      // 新建：放入 chrome 文件夹则作为 chrome 项（dirty）写回 Chrome
+      const folder = values.folderId ? findFolder(next, values.folderId) : null;
+      const isChromeFolder = !!folder && folder.bmId != null;
       const link: NavLink = {
         id: newId("lk"),
         type: "link",
         title: values.title,
         url: values.url,
         description: values.description || undefined,
+        ...(isChromeFolder ? { source: "chrome", dirty: true } : {}),
       };
       next = insertLink(next, values.folderId, link);
       toast.success(t("toast.linkAdded"));
@@ -744,17 +946,21 @@ export function NavApp({ initialData }: { initialData: NavData }) {
       l.title.toLowerCase().includes(q) ||
       l.url.toLowerCase().includes(q) ||
       (l.description ?? "").toLowerCase().includes(q);
-    for (const it of items) {
-      if (it.type === "link") {
-        if (hit(it)) out.push(it);
-      } else {
-        for (const l of it.items) if (hit(l)) out.push(l);
+    // 递归遍历（含任意层级嵌套子文件夹）
+    const walk = (arr: NavItem[]) => {
+      for (const it of arr) {
+        if (it.type === "link") {
+          if (hit(it)) out.push(it);
+        } else {
+          walk(it.items);
+        }
       }
-    }
+    };
+    walk(items);
     return out;
   }, [items, query, searching]);
 
-  const folders = items.filter((i): i is NavFolder => i.type === "folder");
+  const folders = React.useMemo(() => flattenFolderOptions(items), [items]);
   const openFolder = openFolderId
     ? (items.find((i): i is NavFolder => i.type === "folder" && i.id === openFolderId) ?? null)
     : null;
@@ -768,6 +974,8 @@ export function NavApp({ initialData }: { initialData: NavData }) {
           setUpdatedAt(data.updatedAt);
         }}
         onAdd={(origin) => setLinkDialog({ open: true, folderId: null, origin })}
+        onSync={handleSync}
+        lastSyncAt={syncInfo.lastSyncAt}
       />
 
       <main
@@ -970,6 +1178,7 @@ export function NavApp({ initialData }: { initialData: NavData }) {
       {openFolder && (
         <FolderOverlay
           folder={openFolder}
+          items={items}
           edit={edit}
           dragId={drag?.id ?? null}
           panelRef={panelRef}
@@ -978,6 +1187,7 @@ export function NavApp({ initialData }: { initialData: NavData }) {
           onDeleteItem={handleDeleteItem}
           onRename={handleRenameFolder}
           onAddLink={(origin) => setLinkDialog({ open: true, folderId: openFolder.id, origin })}
+          onAddFolder={(parentId) => handleAddFolder(parentId)}
           onClose={() => setOpenFolderId(null)}
         />
       )}

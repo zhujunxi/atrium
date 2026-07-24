@@ -25,10 +25,23 @@ Atrium replaces your new tab with a glass atrium for the web: a daily Bing wallp
 - 🌗 **Dark / Light / System**
 - 💾 **Local-only storage** — data in `chrome.storage.local`, with one-click export / import backup
 - 🔒 **Privacy-first** — only the Bing host permission by default; high-res icons are an optional, on-demand capability
+- 🔖 **Chrome bookmarks sync** — two-way sync mirrors your Chrome bookmarks (nested folders included) into the new tab; edits sync back to Chrome, and open/refresh auto-syncs
 
 ## Screenshots
 
 ![Atrium new tab](screenshot/04.png)
+
+## Chrome Bookmarks Sync
+
+Atrium can mirror your Chrome bookmarks into the new tab and keep them in sync.
+
+- **Two-way sync** — rename, add, or delete a bookmark/folder in Atrium and the change is written back to Chrome on the next sync. Delete a bookmark in Chrome and it disappears from Atrium.
+- **Nested folders** — the full folder hierarchy is preserved, exactly as in Chrome.
+- **Auto-sync** — runs once each time you open or refresh a new tab (throttled to 10s so opening many tabs won't hammer the API). You can also trigger it manually from Settings → Chrome Bookmarks → Sync Now.
+- **Detach, don't destroy** — dragging a Chrome bookmark *out* of a folder, or merging two bookmarks into a new folder, makes a local copy in Atrium; the original stays in Chrome and keeps syncing. Dissolving or deleting a folder is two-way (removed from Chrome too).
+- **Bookmarks Bar / Other Bookmarks** — Chrome's top-level containers are unwrapped, so their contents appear directly on your desktop rather than inside a "Bookmarks Bar" folder.
+
+Manual (non-Chrome) links and folders you create in Atrium are kept separate and never touch your Chrome bookmarks.
 
 ## Install
 

@@ -3,7 +3,7 @@
     "message": "Atrium"
   },
   "description": {
-    "message": "A liquid-glass, macOS Launchpad-style new tab page for Chrome."
+    "message": "打开新标签页，Chrome 收藏夹就地镜像、常用网站一键直达；支持双向同步、拖拽排序与建组；每天一张 Bing 壁纸，必应/Google/百度一键搜索，深色模式随心切换，数据只在本地、可一键导出备份、绝不外传。"
   },
   "action_title": {
     "message": "打开 Atrium 新标签页"

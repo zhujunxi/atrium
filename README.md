@@ -2,7 +2,7 @@
 
 # Atrium
 
-**A liquid-glass, macOS Launchpad-style new tab page for Chrome.**
+**A new tab page that syncs your Chrome bookmarks and keeps your favorites one tap away.**
 
 [English](README.md) · [中文](README.zh-CN.md)
 
@@ -14,7 +14,9 @@
 
 ## Overview
 
-Atrium replaces your new tab with a glass atrium for the web: a daily Bing wallpaper, your links laid out Launchpad-style with liquid-glass icons, drag-to-reorder, drag-to-fold folders, and paged navigation. Everything stays on your device. Visual and interaction inspiration comes from macOS Launchpad and iOS 26 Liquid Glass.
+**Atrium syncs your Chrome bookmarks to a new tab and keeps your favorites one tap away.**
+
+It mirrors your Chrome bookmarks — nested folders included — straight into the page, so the sites you use every day are right there. Open a folder to drill into subfolders; close it to step back one level. Drag any tile to reorder, drop one onto another to group them, or drag it out to detach. A fresh Bing wallpaper loads each day, and the search bar up top switches between Bing, Google, Baidu, and GitHub in a click. Pick light, dark, or system theme. Everything you add stays on your device — Atrium uploads nothing.
 
 ## Features
 

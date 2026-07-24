@@ -31,3 +31,43 @@ export interface NavData {
   items: NavItem[];
   updatedAt: string;
 }
+
+// --- 壁纸收藏 -------------------------------------------------------------
+
+/** 壁纸来源：bing = 来自必应每日图；custom = 用户本地收藏（未来可扩展上传） */
+export type WallpaperSource = "bing" | "custom";
+
+/** 一张被永久收藏的壁纸（仅存 URL + 缩略图 dataURL，不下载原图，Bing 的 th?id= 链接长期有效） */
+export interface SavedWallpaper {
+  id: string;
+  url: string;
+  title: string;
+  copyright: string;
+  copyrightlink: string;
+  /** 缩略图 dataURL（约 3-5KB），画廊网格展示用 */
+  thumb: string;
+  savedAt: string;
+  source: WallpaperSource;
+}
+
+/** 壁纸展示模式：每日推荐 / 我的收藏 / 混合随机 */
+export type WallpaperMode = "bing-daily" | "collection" | "shuffle-all";
+
+export interface WallpaperSettings {
+  mode: WallpaperMode;
+  /** 是否自动轮换 */
+  autoRotate: boolean;
+  /** 轮换间隔（分钟） */
+  rotateIntervalMin: number;
+}
+
+export interface WallpaperCurrent {
+  /** bing-daily / shuffle-all 当前展示的必应图下标 */
+  bingIndex: number;
+  /** collection / shuffle-all 当前展示的收藏 id（可能为 null） */
+  collectionId: string | null;
+  /** shuffle-all 模式下，上一张来自哪个池子（用于恢复/轮换去重） */
+  pool: "bing" | "collection";
+  /** 上次设置时间（ISO），自动轮换据此判断到期 */
+  setAt: string;
+}

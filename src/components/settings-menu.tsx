@@ -5,6 +5,7 @@ import { Download, Laptop, Moon, Plus, RefreshCw, Settings, Sparkles, Sun, Uploa
 import { useTheme } from "next-themes";
 import { toast } from "sonner";
 import { LiquidGlass } from "@/components/liquid-glass";
+import { WallpaperSection } from "@/components/wallpaper-section";
 import { exportNav, importNav } from "@/lib/store";
 import { disableHiRes, enableHiRes, isHiResEnabled } from "@/lib/favicon";
 import { useI18n } from "@/lib/i18n";
@@ -172,6 +173,8 @@ export function SettingsMenu({
                 );
               })}
             </div>
+
+            <WallpaperSection />
 
             <p className="px-2 pb-1.5 text-[11px] font-medium uppercase tracking-wide text-white/55">
               {t("settings.language")}

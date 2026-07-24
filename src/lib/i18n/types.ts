@@ -17,6 +17,13 @@ export const KEYS = [
   "settings.language",
   "settings.export",
   "settings.import",
+  // Wallpaper (collection + mode)
+  "settings.wallpaper",
+  "settings.wallpaperDaily",
+  "settings.wallpaperCollection",
+  "settings.wallpaperShuffleAll",
+  "settings.autoRotate",
+  "settings.rotateInterval",
   // Language switcher
   "language.chinese",
   "language.english",
@@ -38,6 +45,10 @@ export const KEYS = [
   "toast.syncDone",
   "toast.syncNoChange",
   "toast.syncFail",
+  // Wallpaper toasts
+  "toast.wallpaperAdded",
+  "toast.wallpaperRemoved",
+  "toast.wallpaperSet",
   // Accessibility labels
   "a11y.add",
   "a11y.settings",
@@ -50,6 +61,16 @@ export const KEYS = [
   "a11y.dissolveFolder",
   "a11y.back",
   "a11y.page",
+  "a11y.likeWallpaper",
+  "a11y.unlikeWallpaper",
+  "a11y.openGallery",
+  "a11y.closeGallery",
+  "a11y.wallpaperMode",
+  // Wallpaper gallery
+  "wallpaper.galleryTitle",
+  "wallpaper.galleryCurrent",
+  "wallpaper.emptyCollection",
+  "wallpaper.collectionCount",
   // Link dialog
   "dialog.addTitle",
   "dialog.editTitle",

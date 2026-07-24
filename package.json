@@ -4,7 +4,6 @@
   "description": "A liquid-glass, macOS Launchpad-style new tab page extension for Chrome.",
   "type": "module",
   "license": "MIT",
-  "author": "zhujunxi",
   "homepage": "https://github.com/zhujunxi/atrium",
   "repository": {
     "type": "git",

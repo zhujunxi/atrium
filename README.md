@@ -26,6 +26,10 @@ Atrium replaces your new tab with a glass atrium for the web: a daily Bing wallp
 - 💾 **Local-only storage** — data in `chrome.storage.local`, with one-click export / import backup
 - 🔒 **Privacy-first** — only the Bing host permission by default; high-res icons are an optional, on-demand capability
 
+## Screenshots
+
+![Atrium new tab](screenshot/04.png)
+
 ## Install
 
 Atrium offers three install methods — pick whichever fits.

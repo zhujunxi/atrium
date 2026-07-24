@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0] - 2026-07-24
+
+### Added
+
+- Wallpaper collection: like (♥) any Bing wallpaper to save it permanently in `chrome.storage.local` (URL + thumbnail only, no new permissions).
+- Wallpaper gallery (▦): browse, pick, and delete saved wallpapers.
+- Three display modes: daily picks / my collection / shuffle all.
+- Auto-rotate wallpaper with a configurable interval (5 / 15 / 30 / 60 min).
+- Restore the last wallpaper on new tab; sync across open tabs via `chrome.storage.onChanged`.
+
+### Changed
+
+- Bottom-bar controls extended with like and gallery buttons while preserving the existing glass style.
+
 ## [0.2.0] - 2026-07-24
 
 ### Added

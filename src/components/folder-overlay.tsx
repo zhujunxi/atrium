@@ -6,6 +6,7 @@ import { cn } from "@/lib/utils";
 import type { NavFolder, NavItem } from "@/lib/types";
 import { LpItem } from "@/components/lp-item";
 import { LiquidGlass } from "@/components/liquid-glass";
+import { useI18n } from "@/lib/i18n";
 
 interface FolderOverlayProps {
   folder: NavFolder;
@@ -41,6 +42,7 @@ export function FolderOverlay({
   onAddLink,
   onClose,
 }: FolderOverlayProps) {
+  const { t } = useI18n();
   const wrapRef = React.useRef<HTMLDivElement | null>(null);
   const [phase, setPhase] = React.useState<Phase>("enter");
   const closingRef = React.useRef(false);
@@ -184,14 +186,14 @@ export function FolderOverlay({
                     <Plus className="h-5 w-5" />
                   </span>
                   <span className="text-xs text-white/70 transition-colors group-hover:text-primary">
-                    添加
+                    {t("common.add")}
                   </span>
                 </button>
               )}
             </div>
 
             {folder.items.length === 0 && !edit && (
-              <p className="py-8 text-center text-sm text-white/70 drop-shadow">空文件夹</p>
+              <p className="py-8 text-center text-sm text-white/70 drop-shadow">{t("folder.empty")}</p>
             )}
           </div>
         </LiquidGlass>

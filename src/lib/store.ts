@@ -1,4 +1,5 @@
 import type { NavData, NavItem, NavLink } from "@/lib/types";
+import { translate } from "@/lib/i18n";
 
 const STORAGE_KEY = "nav-data";
 
@@ -14,7 +15,7 @@ function migrate(raw: any): NavData {
       .map((c: any) => ({
         id: c.id as string,
         type: "folder" as const,
-        name: String(c.name ?? "未命名"),
+        name: String(c.name ?? translate("common.untitled")),
         items: (Array.isArray(c.links) ? c.links : [])
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           .filter((l: any) => l && typeof l.id === "string")

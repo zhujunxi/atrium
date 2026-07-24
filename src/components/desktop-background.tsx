@@ -3,6 +3,7 @@
 import * as React from "react";
 import { RefreshCw } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useI18n } from "@/lib/i18n";
 
 interface BingImage {
   url: string;
@@ -34,6 +35,7 @@ async function fetchBing(): Promise<BingImage[]> {
 
 /** 桌面壁纸：默认 Bing 今日图，可随机切换 / 自动轮播（切换时交叉淡入，无灰屏闪烁） */
 export function DesktopBackground() {
+  const { t } = useI18n();
   const [images, setImages] = React.useState<BingImage[]>([]);
   const [index, setIndex] = React.useState(0);
   const [imgUrl, setImgUrl] = React.useState(""); // 当前已显示的图（始终为已加载）
@@ -129,8 +131,8 @@ export function DesktopBackground() {
           <button
             type="button"
             onClick={shuffle}
-            title="换一张壁纸"
-            aria-label="换一张壁纸"
+            title={t("a11y.changeWallpaper")}
+            aria-label={t("a11y.changeWallpaper")}
             className="group/btn relative flex h-7 w-7 cursor-pointer items-center justify-center rounded-full border border-white/15 bg-black/30 text-white/80 shadow-lg backdrop-blur-md transition-all duration-200 hover:scale-110 hover:bg-black/40 hover:text-white active:scale-90"
           >
             {/* 默认显示 i（纯文字，无外圈，避免与按钮圆框冲突），hover 切换为刷新图标（换一张） */}

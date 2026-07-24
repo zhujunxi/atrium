@@ -5,6 +5,7 @@ import { X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { NavItem } from "@/lib/types";
 import { AppIcon, FolderIcon } from "@/components/app-icon";
+import { useI18n } from "@/lib/i18n";
 
 /** 由 id 确定性算出抖动相位，避免 SSR 与客户端不一致 */
 function jiggleDelay(id: string) {
@@ -36,6 +37,7 @@ export const LpItem = React.memo(function LpItem({
   onPointerDownItem,
   onDelete,
 }: LpItemProps) {
+  const { t } = useI18n();
   const title = item.type === "link" ? item.title : item.name;
 
   return (
@@ -81,7 +83,7 @@ export const LpItem = React.memo(function LpItem({
         {edit && (
           <button
             type="button"
-            aria-label={item.type === "link" ? `删除 ${title}` : `解散文件夹 ${title}`}
+            aria-label={item.type === "link" ? t("a11y.deleteLink", { title }) : t("a11y.dissolveFolder", { title })}
             onPointerDown={(e) => e.stopPropagation()}
             onClick={(e) => {
               e.stopPropagation();

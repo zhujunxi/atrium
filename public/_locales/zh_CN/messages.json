@@ -1,0 +1,11 @@
+{
+  "name": {
+    "message": "Atrium"
+  },
+  "description": {
+    "message": "液态玻璃质感、macOS Launchpad 风格的新标签页导航。"
+  },
+  "action_title": {
+    "message": "打开 Atrium 新标签页"
+  }
+}

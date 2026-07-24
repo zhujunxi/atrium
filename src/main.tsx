@@ -6,6 +6,7 @@ import { DesktopBackground } from "@/components/desktop-background";
 import { NavApp } from "@/components/nav-app";
 import { loadNav } from "@/lib/store";
 import type { NavData } from "@/lib/types";
+import { I18nProvider } from "@/lib/i18n";
 import "./globals.css";
 
 /** 扩展新标签页根组件：替代原 Next 的 layout.tsx + page.tsx（SSR 读数据 → 改为客户端异步读 storage） */
@@ -17,11 +18,13 @@ function App() {
   }, []);
 
   return (
-    <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>
-      <DesktopBackground />
-      {data && <NavApp initialData={data} />}
-      <Toaster richColors position="top-center" />
-    </ThemeProvider>
+      <I18nProvider>
+        <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>
+          <DesktopBackground />
+          {data && <NavApp initialData={data} />}
+          <Toaster richColors position="top-center" />
+        </ThemeProvider>
+      </I18nProvider>
   );
 }
 

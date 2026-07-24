@@ -1,0 +1,11 @@
+{
+  "name": {
+    "message": "Atrium"
+  },
+  "description": {
+    "message": "A liquid-glass, macOS Launchpad-style new tab page for Chrome."
+  },
+  "action_title": {
+    "message": "Open Atrium new tab"
+  }
+}

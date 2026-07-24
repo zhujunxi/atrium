@@ -14,13 +14,23 @@ import { FolderOverlay } from "@/components/folder-overlay";
 import { AppIcon, FolderIcon } from "@/components/app-icon";
 import { LiquidGlass } from "@/components/liquid-glass";
 import { LinkDialog, type LinkDialogState, type LinkFormValues } from "@/components/dialogs/link-dialog";
+import { useI18n, translate } from "@/lib/i18n";
 
 const ENGINES = [
-  { key: "bing", name: "必应", url: (q: string) => `https://www.bing.com/search?q=${encodeURIComponent(q)}` },
-  { key: "google", name: "Google", url: (q: string) => `https://www.google.com/search?q=${encodeURIComponent(q)}` },
-  { key: "baidu", name: "百度", url: (q: string) => `https://www.baidu.com/s?wd=${encodeURIComponent(q)}` },
-  { key: "github", name: "GitHub", url: (q: string) => `https://github.com/search?q=${encodeURIComponent(q)}` },
+  { key: "bing", nameKey: "engine.bing", url: (q: string) => `https://www.bing.com/search?q=${encodeURIComponent(q)}` },
+  { key: "google", nameKey: "engine.google", url: (q: string) => `https://www.google.com/search?q=${encodeURIComponent(q)}` },
+  { key: "baidu", nameKey: "engine.baidu", url: (q: string) => `https://www.baidu.com/s?wd=${encodeURIComponent(q)}` },
+  { key: "github", nameKey: "engine.github", url: (q: string) => `https://github.com/search?q=${encodeURIComponent(q)}` },
 ] as const;
+
+function greeting() {
+  const h = new Date().getHours();
+  if (h < 6) return "greet.lateNight";
+  if (h < 12) return "greet.morning";
+  if (h < 14) return "greet.noon";
+  if (h < 18) return "greet.afternoon";
+  return "greet.evening";
+}
 
 const LONG_PRESS_MS = 480;
 const DRAG_SLOP_PX = 12;
@@ -30,15 +40,6 @@ const FOLDER_DWELL_MS = 450;
 const EDGE_PX = 64;
 const EDGE_DWELL_MS = 550;
 const EDGE_REPEAT_MS = 800;
-
-function greeting() {
-  const h = new Date().getHours();
-  if (h < 6) return "夜深了";
-  if (h < 12) return "早上好";
-  if (h < 14) return "中午好";
-  if (h < 18) return "下午好";
-  return "晚上好";
-}
 
 function newId(prefix: string) {
   return `${prefix}-${Date.now().toString(36)}${Math.floor(Math.random() * 46656).toString(36)}`;
@@ -147,7 +148,7 @@ function mergeIntoFolder(items: NavItem[], dragId: string, targetId: string): Na
   const folder: NavFolder = {
     id: newId("fd"),
     type: "folder",
-    name: "新建文件夹",
+    name: translate("common.newFolder"),
     items: [target, dragged],
   };
   const targetIdx = items.findIndex((i) => i.id === targetId);
@@ -180,6 +181,7 @@ interface DragState {
 export function NavApp({ initialData }: { initialData: NavData }) {
   const [items, setItems] = React.useState<NavItem[]>(initialData.items);
   const [updatedAt, setUpdatedAt] = React.useState(initialData.updatedAt);
+  const { t, locale } = useI18n();
   const [query, setQuery] = React.useState("");
   // 记住上次选的搜索引擎：首屏直接从 localStorage 同步读出（不闪）；切换时直接写回
   const [engine, setEngine] = React.useState<(typeof ENGINES)[number]["key"]>(() => {
@@ -264,8 +266,11 @@ export function NavApp({ initialData }: { initialData: NavData }) {
   perPageRef.current = perPage;
 
   const today = React.useMemo(
-    () => new Date().toLocaleDateString("zh-CN", { month: "long", day: "numeric", weekday: "long" }),
-    []
+    () =>
+      new Intl.DateTimeFormat(locale, { month: "long", day: "numeric", weekday: "long" }).format(
+        new Date()
+      ),
+    [locale]
   );
 
   const persist = React.useCallback((next: NavItem[]) => {
@@ -276,7 +281,7 @@ export function NavApp({ initialData }: { initialData: NavData }) {
         const data = await store.saveNav(next);
         setUpdatedAt(data.updatedAt);
       } catch (err) {
-        toast.error(err instanceof Error ? err.message : "保存失败");
+        toast.error(err instanceof Error ? err.message : t("toast.saveFail"));
       }
     }, 350);
   }, []);
@@ -318,7 +323,7 @@ export function NavApp({ initialData }: { initialData: NavData }) {
       if (d.mergeTargetId) {
         next = mergeIntoFolder(next, d.id, d.mergeTargetId);
         persist(next);
-        toast.success("已创建文件夹");
+        toast.success(t("toast.folderCreated"));
         return;
       }
       if (d.folderTargetId) {
@@ -327,7 +332,7 @@ export function NavApp({ initialData }: { initialData: NavData }) {
           next = removeFrom(next, "root", d.id);
           next = insertLink(next, d.folderTargetId, dragged);
           persist(next);
-          toast.success("已放入文件夹");
+          toast.success(t("toast.filedIntoFolder"));
         }
         return;
       }
@@ -667,7 +672,7 @@ export function NavApp({ initialData }: { initialData: NavData }) {
   const handleDeleteItem = React.useCallback(
     (item: NavItem) => {
       if (item.type === "link") {
-        if (!window.confirm(`删除「${item.title}」？`)) return;
+        if (!window.confirm(t("confirm.deleteLink", { title: item.title }))) return;
         const c = findContainer(itemsRef.current, item.id);
         let next = removeFrom(itemsRef.current, c ?? "root", item.id);
         next = pruneEmptyFolders(next);
@@ -675,12 +680,12 @@ export function NavApp({ initialData }: { initialData: NavData }) {
           setOpenFolderId(null);
         }
         persist(next);
-        toast.success("已删除");
+        toast.success(t("toast.deleted"));
       } else {
         const n = item.items.length;
-        if (n > 0 && !window.confirm(`解散文件夹「${item.name}」？其中 ${n} 个网址会移到桌面。`)) return;
+        if (n > 0 && !window.confirm(t("confirm.dissolveFolder", { name: item.name, n }))) return;
         persist(dissolveFolder(itemsRef.current, item.id));
-        toast.success(n > 0 ? "文件夹已解散" : "已删除空文件夹");
+        toast.success(n > 0 ? t("toast.folderDissolved") : t("toast.emptyFolderDeleted"));
       }
     },
     [persist]
@@ -705,7 +710,7 @@ export function NavApp({ initialData }: { initialData: NavData }) {
       const c = findContainer(next, initial.id);
       next = removeFrom(next, c ?? "root", initial.id);
       next = insertLink(next, values.folderId, link);
-      toast.success("网址已更新");
+      toast.success(t("toast.linkUpdated"));
     } else {
       const link: NavLink = {
         id: newId("lk"),
@@ -715,7 +720,7 @@ export function NavApp({ initialData }: { initialData: NavData }) {
         description: values.description || undefined,
       };
       next = insertLink(next, values.folderId, link);
-      toast.success("网址已添加");
+      toast.success(t("toast.linkAdded"));
     }
     persist(pruneEmptyFolders(next));
   }
@@ -780,7 +785,7 @@ export function NavApp({ initialData }: { initialData: NavData }) {
         <div className="flex flex-col items-center pb-2 pt-16 text-center">
           <p className="text-sm text-white/90 drop-shadow">{today}</p>
           <h1 className="mt-2 text-4xl font-bold tracking-tight text-white drop-shadow-[0_2px_8px_rgba(0,0,0,0.5)] sm:text-5xl">
-            {greeting()}
+            {t(greeting())}
           </h1>
 
           <LiquidGlass
@@ -805,11 +810,11 @@ export function NavApp({ initialData }: { initialData: NavData }) {
                 "h-9 shrink-0 rounded-full border-transparent bg-transparent px-2 text-sm text-white/80 focus:outline-none transition-opacity duration-150",
                 engineReady ? "opacity-100" : "opacity-0"
               )}
-              aria-label="搜索引擎"
+              aria-label={t("a11y.engine")}
             >
               {ENGINES.map((en) => (
                 <option key={en.key} value={en.key} className="text-foreground">
-                  {en.name}
+                  {t(en.nameKey)}
                 </option>
               ))}
             </select>
@@ -822,12 +827,12 @@ export function NavApp({ initialData }: { initialData: NavData }) {
                 // 失焦到搜索表单之外（点桌面 / 点结果）才清空，表单内切换（选引擎）不清
                 if (!searchFormRef.current?.contains(e.relatedTarget as Node | null)) setQuery("");
               }}
-              placeholder="搜索收藏，或回车站外检索"
+              placeholder={t("search.placeholder")}
               className="h-9 flex-1 border-transparent bg-transparent text-base text-white shadow-none placeholder:text-white/50 focus-visible:ring-0"
             />
             <button
               type="submit"
-              aria-label="搜索"
+              aria-label={t("a11y.search")}
               className="flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center rounded-full text-white/80 transition-colors hover:bg-white/10 hover:text-white"
             >
               <Search className="h-4 w-4" />
@@ -857,7 +862,7 @@ export function NavApp({ initialData }: { initialData: NavData }) {
             ))}
             {searchResults.length === 0 && (
               <p className="col-span-full py-16 text-center text-sm text-white/80 drop-shadow">
-                没有找到匹配的收藏，试试回车站外搜索「{query.trim()}」
+                {t("search.empty", { query: query.trim() })}
               </p>
             )}
           </div>
@@ -905,14 +910,14 @@ export function NavApp({ initialData }: { initialData: NavData }) {
                         <Plus className="h-5 w-5" />
                       </span>
                       <span className="text-xs text-white/70 transition-colors group-hover:text-primary">
-                        添加
+                        {t("common.add")}
                       </span>
                     </button>
                   )}
 
                   {pageItems.length === 0 && !edit && (
                     <p className="col-span-full py-16 text-center text-sm text-white/80 drop-shadow">
-                      桌面还是空的，长按任意位置上方图标进入编辑模式后点「添加」
+                      {t("desktop.empty")}
                     </p>
                   )}
                 </div>
@@ -928,7 +933,7 @@ export function NavApp({ initialData }: { initialData: NavData }) {
               <button
                 key={i}
                 type="button"
-                aria-label={`第 ${i + 1} 页，共 ${pageCount} 页`}
+                aria-label={t("a11y.page", { n: i + 1, m: pageCount })}
                 aria-current={i === page}
                 onClick={() => pagerRef.current?.goTo(i)}
                 className="group flex h-5 w-5 items-center justify-center"
@@ -956,7 +961,7 @@ export function NavApp({ initialData }: { initialData: NavData }) {
           )}
         >
           <div className="whitespace-nowrap rounded-full border border-white/15 bg-black/30 px-5 py-2 text-xs text-white/90 shadow-lg backdrop-blur-md">
-            拖动排序 · 拖到屏幕边缘翻页 · 拖到一起建文件夹 · 拖到文件夹上收纳 · 点空白处或按 Esc 完成
+            {t("edit.hint")}
           </div>
         </div>
       )}

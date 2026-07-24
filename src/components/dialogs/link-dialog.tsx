@@ -7,6 +7,7 @@ import type { NavFolder, NavLink } from "@/lib/types";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { LiquidGlass } from "@/components/liquid-glass";
+import { useI18n } from "@/lib/i18n";
 
 export interface LinkDialogState {
   open: boolean;
@@ -43,6 +44,7 @@ type Phase = "enter" | "open" | "exit";
 /** 复用文件夹展开层逻辑：从触发点缩放展开到居中，收起时缩回触发点；用 CSS 变量携带初始态，避免闪烁 */
 export function LinkDialog({ state, folders, onOpenChange, onSubmit }: LinkDialogProps) {
   const { open, initial, origin } = state;
+  const { t } = useI18n();
   const [title, setTitle] = React.useState("");
   const [url, setUrl] = React.useState("");
   const [description, setDescription] = React.useState("");
@@ -172,10 +174,12 @@ export function LinkDialog({ state, folders, onOpenChange, onSubmit }: LinkDialo
         >
           <div className="relative z-[3]">
             <div className="mb-4 flex items-center justify-between">
-              <h2 className="text-base font-semibold text-white">{initial ? "编辑网址" : "添加网址"}</h2>
+              <h2 className="text-base font-semibold text-white">
+                {t(initial ? "dialog.editTitle" : "dialog.addTitle")}
+              </h2>
               <button
                 type="button"
-                aria-label="关闭"
+                aria-label={t("a11y.close")}
                 onClick={requestClose}
                 className="flex h-7 w-7 items-center justify-center rounded-full text-white/60 transition-colors hover:bg-white/10 hover:text-white"
               >
@@ -186,13 +190,13 @@ export function LinkDialog({ state, folders, onOpenChange, onSubmit }: LinkDialo
             <form onSubmit={handleSubmit} className="space-y-3.5">
               <div className="space-y-1.5">
                 <Label htmlFor="link-title" className={labelCls}>
-                  标题
+                  {t("dialog.title")}
                 </Label>
                 <Input
                   id="link-title"
                   value={title}
                   onChange={(e) => setTitle(e.target.value)}
-                  placeholder="例如：GitHub"
+                  placeholder={t("dialog.titlePh")}
                   autoFocus
                   maxLength={30}
                   className={fieldCls}
@@ -200,33 +204,33 @@ export function LinkDialog({ state, folders, onOpenChange, onSubmit }: LinkDialo
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor="link-url" className={labelCls}>
-                  链接
+                  {t("dialog.url")}
                 </Label>
                 <Input
                   id="link-url"
                   value={url}
                   onChange={(e) => setUrl(e.target.value)}
-                  placeholder="https://example.com"
+                  placeholder={t("dialog.urlPh")}
                   inputMode="url"
                   className={fieldCls}
                 />
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor="link-desc" className={labelCls}>
-                  描述（可选）
+                  {t("dialog.description")}
                 </Label>
                 <Input
                   id="link-desc"
                   value={description}
                   onChange={(e) => setDescription(e.target.value)}
-                  placeholder="一句话说明这个网站"
+                  placeholder={t("dialog.descPh")}
                   maxLength={50}
                   className={fieldCls}
                 />
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor="link-folder" className={labelCls}>
-                  位置
+                  {t("dialog.location")}
                 </Label>
                 <select
                   id="link-folder"
@@ -234,7 +238,7 @@ export function LinkDialog({ state, folders, onOpenChange, onSubmit }: LinkDialo
                   onChange={(e) => setFolderId(e.target.value)}
                   className={fieldCls}
                 >
-                  <option value="">桌面</option>
+                  <option value="">{t("dialog.desktop")}</option>
                   {folders.map((f) => (
                     <option key={f.id} value={f.id}>
                       {f.name}
@@ -249,14 +253,14 @@ export function LinkDialog({ state, folders, onOpenChange, onSubmit }: LinkDialo
                   onClick={requestClose}
                   className="rounded-lg bg-white/10 px-4 py-1.5 text-sm font-medium text-white transition-colors hover:bg-white/15"
                 >
-                  取消
+                  {t("dialog.cancel")}
                 </button>
                 <button
                   type="submit"
                   disabled={!title.trim() || !url.trim()}
                   className="rounded-lg bg-[#0A84FF] px-4 py-1.5 text-sm font-medium text-white shadow-sm transition-colors hover:bg-[#0A84FF]/90 disabled:opacity-40"
                 >
-                  保存
+                  {t("dialog.save")}
                 </button>
               </div>
             </form>

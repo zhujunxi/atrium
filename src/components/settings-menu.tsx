@@ -7,12 +7,13 @@ import { toast } from "sonner";
 import { LiquidGlass } from "@/components/liquid-glass";
 import { exportNav, importNav } from "@/lib/store";
 import { disableHiRes, enableHiRes, isHiResEnabled } from "@/lib/favicon";
+import { useI18n } from "@/lib/i18n";
 import type { NavData } from "@/lib/types";
 
 const APPEARANCE = [
-  { key: "light", label: "浅色", icon: Sun },
-  { key: "dark", label: "深色", icon: Moon },
-  { key: "system", label: "自动", icon: Laptop },
+  { key: "light", labelKey: "appearance.light", icon: Sun },
+  { key: "dark", labelKey: "appearance.dark", icon: Moon },
+  { key: "system", labelKey: "appearance.system", icon: Laptop },
 ] as const;
 
 /** 右上角「新建 + 设置」液态玻璃胶囊按钮组（macOS 风格：同一块玻璃内含两个控件，弹出层在玻璃外渲染避免被裁切） */
@@ -28,6 +29,7 @@ export function SettingsMenu({
   const ref = React.useRef<HTMLDivElement | null>(null);
   const fileRef = React.useRef<HTMLInputElement | null>(null);
   const [hiRes, setHiRes] = React.useState(true);
+  const { t, locale, setLocale } = useI18n();
 
   React.useEffect(() => {
     setHiRes(isHiResEnabled());
@@ -38,14 +40,14 @@ export function SettingsMenu({
       const granted = await enableHiRes();
       if (granted) {
         setHiRes(true);
-        toast.success("已开启高清图标（刷新后生效）");
+        toast.success(t("toast.hdOn"));
       } else {
-        toast.error("未授予访问权限，无法开启高清图标");
+        toast.error(t("toast.hdDenied"));
       }
     } else {
       await disableHiRes();
       setHiRes(false);
-      toast.success("已关闭高清图标");
+      toast.success(t("toast.hdOff"));
     }
   }
 
@@ -61,7 +63,7 @@ export function SettingsMenu({
       URL.revokeObjectURL(url);
       setOpen(false);
     } catch {
-      toast.error("导出失败");
+      toast.error(t("toast.exportFail"));
     }
   }
 
@@ -73,10 +75,10 @@ export function SettingsMenu({
       const text = await file.text();
       const data = await importNav(text);
       onImported(data);
-      toast.success("导入成功");
+      toast.success(t("toast.importOk"));
       setOpen(false);
     } catch {
-      toast.error("导入失败：文件格式不正确");
+      toast.error(t("toast.importFail"));
     }
   }
 
@@ -112,21 +114,21 @@ export function SettingsMenu({
         blur={1.5}
         className="flex items-center gap-1 rounded-full px-1 py-0.5 transition-transform duration-200 hover:-translate-y-0.5 hover:drop-shadow-[0_10px_20px_rgba(0,0,0,0.35)]"
       >
-        <button
-          type="button"
-          aria-label="新建"
-          onClick={(e) => onAdd({ x: e.clientX, y: e.clientY })}
-          className={btn}
-        >
-          <Plus className="relative z-[3] h-[18px] w-[18px] transition-transform duration-200 group-hover:scale-125" />
-        </button>
-        <button
-          type="button"
-          aria-label="设置"
-          aria-expanded={open}
-          onClick={() => setOpen((v) => !v)}
-          className={btn}
-        >
+          <button
+            type="button"
+            aria-label={t("a11y.add")}
+            onClick={(e) => onAdd({ x: e.clientX, y: e.clientY })}
+            className={btn}
+          >
+            <Plus className="relative z-[3] h-[18px] w-[18px] transition-transform duration-200 group-hover:scale-125" />
+          </button>
+          <button
+            type="button"
+            aria-label={t("a11y.settings")}
+            aria-expanded={open}
+            onClick={() => setOpen((v) => !v)}
+            className={btn}
+          >
           <Settings className="relative z-[3] h-[18px] w-[18px] transition-transform duration-300 group-hover:rotate-45" />
         </button>
       </LiquidGlass>
@@ -142,7 +144,7 @@ export function SettingsMenu({
         >
           <div className="relative z-[3]">
             <p className="px-2 pb-1.5 text-[11px] font-medium uppercase tracking-wide text-white/55">
-              外观
+              {t("settings.appearance")}
             </p>
             <div className="flex gap-1.5 rounded-2xl bg-black/15 p-1.5">
               {APPEARANCE.map((opt) => {
@@ -160,8 +162,37 @@ export function SettingsMenu({
                         : "text-white/60 hover:text-white")
                     }
                   >
-                    <Icon className="h-4 w-4" />
-                    {opt.label}
+                  <Icon className="h-4 w-4" />
+                  {t(opt.labelKey)}
+                </button>
+                );
+              })}
+            </div>
+
+            <p className="px-2 pb-1.5 text-[11px] font-medium uppercase tracking-wide text-white/55">
+              {t("settings.language")}
+            </p>
+            <div className="flex gap-1.5 rounded-2xl bg-black/15 p-1.5">
+              {(
+                [
+                  { key: "zh-CN", labelKey: "language.chinese" },
+                  { key: "en", labelKey: "language.english" },
+                ] as const
+              ).map((opt) => {
+                const isActive = locale === opt.key;
+                return (
+                  <button
+                    key={opt.key}
+                    type="button"
+                    onClick={() => setLocale(opt.key)}
+                    className={
+                      "flex flex-1 flex-col items-center gap-1 rounded-xl py-1.5 text-[11px] transition-colors " +
+                      (isActive
+                        ? "bg-white/25 text-white shadow-[inset_0_1px_1px_rgba(255,255,255,0.3)]"
+                        : "text-white/60 hover:text-white")
+                    }
+                  >
+                    {t(opt.labelKey)}
                   </button>
                 );
               })}
@@ -175,7 +206,7 @@ export function SettingsMenu({
               className="flex w-full items-center gap-2.5 rounded-2xl px-3 py-2.5 text-sm text-white/85 transition-colors hover:bg-white/15 hover:text-white"
             >
               <Sparkles className="h-4 w-4" />
-              <span className="flex-1 text-left">高清图标</span>
+              <span className="flex-1 text-left">{t("settings.hdIcons")}</span>
               <span
                 className={
                   "relative h-5 w-9 rounded-full transition-colors " +
@@ -194,7 +225,7 @@ export function SettingsMenu({
             <div className="my-2 h-px bg-white/15" />
 
             <p className="px-2 pb-1.5 text-[11px] font-medium uppercase tracking-wide text-white/55">
-              数据
+              {t("settings.data")}
             </p>
             <button
               type="button"
@@ -202,7 +233,7 @@ export function SettingsMenu({
               className="flex w-full items-center gap-2.5 rounded-2xl px-3 py-2.5 text-sm text-white/85 transition-colors hover:bg-white/15 hover:text-white"
             >
               <Download className="h-4 w-4" />
-              导出备份
+              {t("settings.export")}
             </button>
             <button
               type="button"
@@ -210,7 +241,7 @@ export function SettingsMenu({
               className="flex w-full items-center gap-2.5 rounded-2xl px-3 py-2.5 text-sm text-white/85 transition-colors hover:bg-white/15 hover:text-white"
             >
               <Upload className="h-4 w-4" />
-              导入备份
+              {t("settings.import")}
             </button>
             <input
               ref={fileRef}

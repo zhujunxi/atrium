@@ -3,8 +3,9 @@ import pkg from "./package.json";
 
 export default defineManifest({
   manifest_version: 3,
-  name: "Atrium",
-  description: "一个液态玻璃质感、macOS Launchpad 风格的新标签页导航。A liquid-glass, Launchpad-style new tab.",
+  name: "__MSG_name__",
+  description: "__MSG_description__",
+  default_locale: "en",
   version: pkg.version,
   // 用本扩展页面覆盖 Chrome 新标签页
   chrome_url_overrides: {
@@ -17,7 +18,7 @@ export default defineManifest({
   },
   // 工具栏按钮：无 popup，点击时由 background 打开导航新标签页（否则图标灰色且点击无响应）
   action: {
-    default_title: "打开 Atrium 新标签页",
+    default_title: "__MSG_action_title__",
     default_icon: {
       "16": "icons/16.png",
       "48": "icons/48.png",

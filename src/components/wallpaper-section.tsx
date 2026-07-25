@@ -43,7 +43,7 @@ export function WallpaperSection() {
 
   const toggle =
     "relative h-5 w-9 rounded-full transition-colors " +
-    (settings.autoRotate ? "bg-white/70" : "bg-white/20");
+    (settings.autoRotate ? "bg-[#0A84FF]" : "bg-white/20");
   const knob =
     "absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition-all " +
     (settings.autoRotate ? "left-[18px]" : "left-0.5");
@@ -64,7 +64,7 @@ export function WallpaperSection() {
               type="button"
               onClick={() => update({ mode: opt.key })}
               className={
-                "flex flex-1 items-center justify-center rounded-xl py-1.5 text-[11px] transition-colors " +
+                "flex flex-1 items-center justify-center whitespace-nowrap rounded-xl py-1.5 text-[11px] transition-colors " +
                 (isActive
                   ? "bg-white/25 text-white shadow-[inset_0_1px_1px_rgba(255,255,255,0.3)]"
                   : "text-white/60 hover:text-white")

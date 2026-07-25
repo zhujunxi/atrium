@@ -21,7 +21,7 @@ export const zhCN: Dict = {
   "settings.wallpaperCollection": "我的收藏",
   "settings.wallpaperShuffleAll": "混合随机",
   "settings.autoRotate": "自动轮换",
-  "settings.rotateInterval": "轮换间隔",
+  "settings.rotateInterval": "间隔",
 
   "language.chinese": "中文",
   "language.english": "English",

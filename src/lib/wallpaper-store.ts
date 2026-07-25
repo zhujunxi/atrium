@@ -112,6 +112,43 @@ export async function saveWallpaperCurrent(c: WallpaperCurrent): Promise<void> {
   await chrome.storage.local.set({ [CUR_KEY]: c });
 }
 
+// --- 刷新首屏兜底 ---------------------------------------------------------
+// 缓存上一张壁纸的极小缩略图（dataURL），刷新后立即拉伸模糊显示，
+// 避免图片下载期间露出页面底色造成的灰色闪屏。
+
+const BACKDROP_KEY = "wallpaper-backdrop";
+
+export async function loadWallpaperBackdrop(): Promise<string> {
+  const res = await chrome.storage.local.get(BACKDROP_KEY);
+  return (res[BACKDROP_KEY] as string) || "";
+}
+
+/**
+ * 把指定壁纸压缩为 32px 宽的极小缩略图并缓存，用作刷新首屏的模糊兜底。
+ * 失败静默忽略（兜底图缺失时上层会回退到纯色底）。
+ */
+export async function saveWallpaperBackdrop(url: string): Promise<void> {
+  try {
+    const res = await fetch(url, { cache: "force-cache" });
+    const blob = await res.blob();
+    const bmp = await createImageBitmap(blob);
+    const scale = Math.min(1, 32 / bmp.width);
+    const w = Math.max(1, Math.round(bmp.width * scale));
+    const h = Math.max(1, Math.round(bmp.height * scale));
+    const canvas = document.createElement("canvas");
+    canvas.width = w;
+    canvas.height = h;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+    ctx.drawImage(bmp, 0, 0, w, h);
+    if (typeof bmp.close === "function") bmp.close();
+    const dataUrl = canvas.toDataURL("image/jpeg", 0.5);
+    await chrome.storage.local.set({ [BACKDROP_KEY]: dataUrl });
+  } catch {
+    /* 忽略 */
+  }
+}
+
 // --- 缩略图生成 -----------------------------------------------------------
 
 /**

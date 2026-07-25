@@ -11,14 +11,16 @@ import {
   addToCollection,
   generateThumb,
   loadCollection,
+  loadWallpaperBackdrop,
   loadWallpaperCurrent,
   loadWallpaperSettings,
   removeFromCollection,
+  saveWallpaperBackdrop,
   saveWallpaperCurrent,
   saveWallpaperSettings,
 } from "@/lib/wallpaper-store";
 import { WallpaperGallery } from "@/components/wallpaper-gallery";
-import type { SavedWallpaper, WallpaperCurrent, WallpaperMode, WallpaperSettings } from "@/lib/types";
+import type { SavedWallpaper, WallpaperCurrent, WallpaperSettings } from "@/lib/types";
 
 interface BingImage {
   url: string;
@@ -81,6 +83,7 @@ export function DesktopBackground() {
   const [current, setCurrent] = React.useState<WallpaperCurrent | null>(null);
   const [imgUrl, setImgUrl] = React.useState(""); // 当前已显示的图（始终为已加载）
   const [next, setNext] = React.useState<{ url: string; ready: boolean } | null>(null); // 待交叉淡入的新图
+  const [backdrop, setBackdrop] = React.useState(""); // 上一张壁纸的极小缩略图 dataURL，刷新首屏模糊兜底用
   const [galleryOpen, setGalleryOpen] = React.useState(false);
   const barRef = React.useRef<HTMLDivElement | null>(null);
 
@@ -116,11 +119,13 @@ export function DesktopBackground() {
       loadCollection(),
       loadWallpaperSettings(),
       loadWallpaperCurrent(),
-    ]).then(([coll, sett, cur]) => {
+      loadWallpaperBackdrop(),
+    ]).then(([coll, sett, cur, bg]) => {
       if (!alive) return;
       setCollection(coll);
       setSettings(sett);
       setCurrent(cur);
+      setBackdrop(bg);
     });
     return () => {
       alive = false;
@@ -198,20 +203,52 @@ export function DesktopBackground() {
     };
   }, [settings, current, collection, images]);
 
-  // 目标图变化且不同于当前显示图时，启动交叉淡入
+  // 目标图变化且不同于当前显示图时：先预加载并解码新图，像素完全就绪后再呈现。
+  // - 首次加载（imgUrl 为空，无旧图兜底）：直接展示，不做渐入——避免灰底停留 + 渐入被
+  //   跳过造成的闪屏（用户明确要求首屏直接展示）。
+  // - 切换（imgUrl 非空，有旧图兜底）：走交叉淡入层，700ms 平滑过渡。
   React.useEffect(() => {
     if (!activeImg?.url || activeImg.url === imgUrl) return;
-    setNext({ url: activeImg.url, ready: false });
+    let cancelled = false;
+    const pre = new Image();
+    pre.src = activeImg.url;
+    const show = () => {
+      if (cancelled) return;
+      if (!imgUrl) {
+        setImgUrl(activeImg.url);
+        void saveWallpaperBackdrop(activeImg.url);
+      } else {
+        setNext({ url: activeImg.url, ready: false });
+      }
+    };
+    if (typeof pre.decode === "function") {
+      pre.decode().then(show).catch(show);
+    } else {
+      pre.onload = show;
+      pre.onerror = () => {
+        if (!cancelled && imgUrl) setNext(null);
+      };
+    }
+    return () => {
+      cancelled = true;
+    };
   }, [activeImg?.url, imgUrl]);
 
-  // 新图层挂载后下一帧置为可见，触发 CSS 过渡
+  // 淡入层挂载后，确保 opacity-0 帧已被浏览器绘制（双 rAF），再置 ready 触发 700ms 过渡。
+  // 这一帧之差决定了过渡是「生效」还是「被 React 批处理跳过、图片啪地出现」。
   React.useEffect(() => {
-    if (!next) return;
-    const id = requestAnimationFrame(() =>
-      setNext((n) => (n ? { ...n, ready: true } : n))
-    );
-    return () => cancelAnimationFrame(id);
-  }, [next?.url]);
+    if (!next || next.ready) return;
+    let raf2 = 0;
+    const raf1 = requestAnimationFrame(() => {
+      raf2 = requestAnimationFrame(() => {
+        setNext((n) => (n ? { ...n, ready: true } : n));
+      });
+    });
+    return () => {
+      cancelAnimationFrame(raf1);
+      cancelAnimationFrame(raf2);
+    };
+  }, [next?.url, next?.ready]);
 
   // 换一张：按模式在对应池子里随机选一张不同的
   const advance = React.useCallback(() => {
@@ -343,7 +380,21 @@ export function DesktopBackground() {
 
   return (
     <>
-      <div className="fixed inset-0 -z-10">
+      <div className="fixed inset-0 -z-10 bg-background">
+        {/* 刷新首屏兜底：上一张壁纸的模糊缩略图，直接显示（首屏不渐入），图片加载完即被覆盖 */}
+        {backdrop && (
+          <div
+            aria-hidden
+            className="absolute inset-0"
+            style={{
+              backgroundImage: `url(${backdrop})`,
+              backgroundSize: "cover",
+              backgroundPosition: "center",
+              filter: "blur(20px)",
+              transform: "scale(1.1)",
+            }}
+          />
+        )}
         {imgUrl && (
           <img
             src={imgUrl}
@@ -357,9 +408,13 @@ export function DesktopBackground() {
             src={next.url}
             alt=""
             draggable={false}
+            // 像素就绪已由外部 decode() 保证；此处仅处理加载失败兜底
+            onError={() => setNext(null)}
             onTransitionEnd={() => {
               setImgUrl(next.url);
               setNext(null);
+              // 异步缓存新图的极小缩略图，作为下次刷新首屏的模糊兜底
+              void saveWallpaperBackdrop(next.url);
             }}
             className={cn(
               "absolute inset-0 h-full w-full select-none object-cover transition-opacity duration-700",

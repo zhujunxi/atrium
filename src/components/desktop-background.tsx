@@ -9,6 +9,7 @@ import {
   COLL_KEY,
   SETT_KEY,
   addToCollection,
+  canonicalWallpaperId,
   generateThumb,
   loadCollection,
   loadWallpaperBackdrop,
@@ -266,16 +267,33 @@ export function DesktopBackground() {
       return;
     }
     if (settings.mode === "shuffle-all") {
+      // 同一张图可能同时出现在必应池与收藏池（url 串不同但归一 id 相同），
+      // 按归一 id 去重，避免同一张图在随机流里出现两次、红心状态还不一致。
+      const collIds = new Set(collection.map((w) => canonicalWallpaperId(w.url)));
       const pool = [
-        ...images.map((img, i) => ({ type: "bing" as const, i, url: img.url, key: `b${i}` })),
-        ...collection.map((w) => ({ type: "collection" as const, id: w.id, url: w.url, key: `c${w.id}` })),
+        ...images
+          .map((img, i) => ({
+            type: "bing" as const,
+            i,
+            url: img.url,
+            key: `b${i}`,
+            cid: canonicalWallpaperId(img.url),
+          }))
+          .filter((b) => !collIds.has(b.cid)),
+        ...collection.map((w) => ({
+          type: "collection" as const,
+          id: w.id,
+          url: w.url,
+          key: `c${w.id}`,
+          cid: canonicalWallpaperId(w.url),
+        })),
       ];
       if (pool.length <= 1) return;
       const curDesc =
         current.pool === "collection" && current.collectionId
           ? pool.find((p) => p.type === "collection" && p.id === current.collectionId)
           : pool.find((p) => p.type === "bing" && p.i === current.bingIndex);
-      const pick = pickDifferent(pool, (a, b) => a.key === b.key, curDesc ?? pool[0]);
+      const pick = pickDifferent(pool, (a, b) => a.cid === b.cid, curDesc ?? pool[0]);
       if (pick.type === "bing")
         setCur({ ...current, bingIndex: pick.i, pool: "bing", setAt: nowIso });
       else setCur({ ...current, collectionId: pick.id, pool: "collection", setAt: nowIso });
@@ -298,27 +316,39 @@ export function DesktopBackground() {
     return () => window.clearTimeout(id);
   }, [settings?.autoRotate, settings?.rotateIntervalMin, current?.setAt, advance]);
 
-  const liked = !!activeImg && collection.some((w) => w.url === activeImg.url);
+  // 用归一化 id 判定「是否已收藏」：同一张必应图在不同模式下 url 串可能不同（rf/pid/分辨率），
+  // 直接比对整串会导致同一张图有的有红心、有的没有，还能被重复点红心。
+  const liked =
+    !!activeImg &&
+    collection.some((w) => canonicalWallpaperId(w.url) === canonicalWallpaperId(activeImg.url));
 
+  // 防止快速连点 / 并发：上一回合未结束时忽略新点击，避免重复入库。
+  const likePendingRef = React.useRef(false);
   async function toggleLike() {
-    if (!activeImg) return;
-    const existing = collection.find((w) => w.url === activeImg.url);
-    if (existing) {
-      const next = await removeFromCollection(existing.id);
-      handleRemoved(existing.id, next);
-      toast.success(t("toast.wallpaperRemoved"));
-    } else {
-      const thumb = await generateThumb(activeImg.url);
-      const next = await addToCollection({
-        url: activeImg.url,
-        title: activeImg.title,
-        copyright: activeImg.copyright,
-        copyrightlink: activeImg.copyrightlink,
-        thumb,
-        source: activeImg.fromCollection ? "custom" : "bing",
-      });
-      setCollection(next);
-      toast.success(t("toast.wallpaperAdded"));
+    if (!activeImg || likePendingRef.current) return;
+    likePendingRef.current = true;
+    try {
+      const cid = canonicalWallpaperId(activeImg.url);
+      const existing = collection.find((w) => canonicalWallpaperId(w.url) === cid);
+      if (existing) {
+        const next = await removeFromCollection(existing.id);
+        handleRemoved(existing.id, next);
+        toast.success(t("toast.wallpaperRemoved"));
+      } else {
+        const thumb = await generateThumb(activeImg.url);
+        const next = await addToCollection({
+          url: activeImg.url,
+          title: activeImg.title,
+          copyright: activeImg.copyright,
+          copyrightlink: activeImg.copyrightlink,
+          thumb,
+          source: activeImg.fromCollection ? "custom" : "bing",
+        });
+        setCollection(next);
+        toast.success(t("toast.wallpaperAdded"));
+      }
+    } finally {
+      likePendingRef.current = false;
     }
   }
 

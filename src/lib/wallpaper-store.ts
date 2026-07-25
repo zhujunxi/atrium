@@ -10,6 +10,44 @@ export const COLL_KEY = "wallpaper-collection";
 export const SETT_KEY = "wallpaper-settings";
 const CUR_KEY = "wallpaper-current";
 
+/**
+ * 把壁纸 URL 归一成稳定标识。
+ * 必应每日图的 url 含易变参数（如 &rf=…、&pid=hp）与分辨率后缀（_1920x1080.jpg），
+ * 同一张图在不同时刻 / 不同模式下拿到的 url 字符串并不相同。若按整串相等去重，
+ * 会出现「同一张图有的有红心、有的没有」以及「同一张图被重复收藏」的问题。
+ * 这里只取 th?id= 的稳定主体（OHR.Name_MARKET<ts>），忽略分辨率与杂参数，
+ * 让同一张图在任何来源 / 任何模式下都映射到同一个 key。
+ */
+export function canonicalWallpaperId(rawUrl: string): string {
+  try {
+    const u = new URL(rawUrl);
+    const host = u.hostname.toLowerCase();
+    if (host.endsWith("bing.com") || host.endsWith("bing.net")) {
+      const id = u.searchParams.get("id");
+      if (id) {
+        // OHR.Name_MARKET<ts>_1920x1080.jpg → OHR.Name_MARKET<ts>
+        const base = id.replace(/_[\dx]+x[\dx]+\.[a-z]+$/i, "");
+        return `bing:${base}`;
+      }
+    }
+    return `${host}${u.pathname}`;
+  } catch {
+    return rawUrl; // 非法 URL 兜底：原样返回，不崩溃
+  }
+}
+
+// 串行化收藏的写入，避免并发（快速连点 / 跨标签页）对同一张图产生重复入库：
+// 两次 addToCollection 同时读到的都是写入前的列表，就会各插一条。锁住写入链即可。
+let writeChain: Promise<unknown> = Promise.resolve();
+function withCollectionWrite<T>(fn: () => Promise<T>): Promise<T> {
+  const run = writeChain.then(fn, fn);
+  writeChain = run.then(
+    () => undefined,
+    () => undefined
+  );
+  return run;
+}
+
 const DEFAULT_SETTINGS: WallpaperSettings = {
   mode: "bing-daily",
   autoRotate: false,
@@ -28,7 +66,17 @@ const DEFAULT_CURRENT: WallpaperCurrent = {
 export async function loadCollection(): Promise<SavedWallpaper[]> {
   const res = await chrome.storage.local.get(COLL_KEY);
   const arr = res[COLL_KEY];
-  return Array.isArray(arr) ? (arr as SavedWallpaper[]) : [];
+  if (!Array.isArray(arr)) return [];
+  // 折叠历史遗留的重复（同一张图因 url 串不同而被存了多条）：保留首次出现的一条。
+  const seen = new Set<string>();
+  const out: SavedWallpaper[] = [];
+  for (const w of arr as SavedWallpaper[]) {
+    const cid = canonicalWallpaperId(w.url);
+    if (seen.has(cid)) continue;
+    seen.add(cid);
+    out.push(w);
+  }
+  return out;
 }
 
 async function saveCollection(items: SavedWallpaper[]): Promise<void> {
@@ -36,29 +84,35 @@ async function saveCollection(items: SavedWallpaper[]): Promise<void> {
 }
 
 /**
- * 收藏当前壁纸。按 url 去重：同一张必应图不会重复入库。
- * 返回更新后的列表（未变化时原样返回，便于上层判断是否真的新增）。
+ * 收藏当前壁纸。按「归一化 id」去重：同一张必应图（即使 url 串因 rf/pid/分辨率而不同）
+ * 不会重复入库。返回更新后的列表（未变化时原样返回，便于上层判断是否真的新增）。
+ * 写入经 withCollectionWrite 串行化，并发调用也不会产生重复条目。
  */
 export async function addToCollection(
   img: Omit<SavedWallpaper, "id" | "savedAt">
 ): Promise<SavedWallpaper[]> {
-  const items = await loadCollection();
-  if (items.some((w) => w.url === img.url)) return items;
-  const item: SavedWallpaper = {
-    id: `wp_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
-    savedAt: new Date().toISOString(),
-    ...img,
-  };
-  const next = [item, ...items]; // 最新收藏排在最前
-  await saveCollection(next);
-  return next;
+  return withCollectionWrite(async () => {
+    const items = await loadCollection();
+    const cid = canonicalWallpaperId(img.url);
+    if (items.some((w) => canonicalWallpaperId(w.url) === cid)) return items;
+    const item: SavedWallpaper = {
+      id: `wp_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+      savedAt: new Date().toISOString(),
+      ...img,
+    };
+    const next = [item, ...items]; // 最新收藏排在最前
+    await saveCollection(next);
+    return next;
+  });
 }
 
 export async function removeFromCollection(id: string): Promise<SavedWallpaper[]> {
-  const items = await loadCollection();
-  const next = items.filter((w) => w.id !== id);
-  await saveCollection(next);
-  return next;
+  return withCollectionWrite(async () => {
+    const items = await loadCollection();
+    const next = items.filter((w) => w.id !== id);
+    await saveCollection(next);
+    return next;
+  });
 }
 
 /** 按给定 id 顺序重排收藏（画廊拖拽排序用） */

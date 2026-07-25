@@ -5,6 +5,7 @@ import { Download, Laptop, Moon, Plus, RefreshCw, Settings, Sparkles, Sun, Uploa
 import { useTheme } from "next-themes";
 import { toast } from "sonner";
 import { LiquidGlass } from "@/components/liquid-glass";
+import { SegmentedControl, type SegmentedOption } from "@/components/ui/segmented-control";
 import { WallpaperSection } from "@/components/wallpaper-section";
 import { exportNav, importNav } from "@/lib/store";
 import { disableHiRes, enableHiRes, isHiResEnabled } from "@/lib/favicon";
@@ -151,28 +152,18 @@ export function SettingsMenu({
             <p className="px-2 pb-1.5 text-[11px] font-medium uppercase tracking-wide text-white/55">
               {t("settings.appearance")}
             </p>
-            <div className="flex gap-1.5 rounded-2xl bg-black/15 p-1.5">
-              {APPEARANCE.map((opt) => {
-                const Icon = opt.icon;
-                const isActive = active === opt.key;
-                return (
-                  <button
-                    key={opt.key}
-                    type="button"
-                    onClick={() => setTheme(opt.key)}
-                    className={
-                      "flex flex-1 flex-col items-center gap-1 rounded-xl py-1.5 text-[11px] transition-colors " +
-                      (isActive
-                        ? "bg-white/25 text-white shadow-[inset_0_1px_1px_rgba(255,255,255,0.3)]"
-                        : "text-white/60 hover:text-white")
-                    }
-                  >
-                  <Icon className="h-4 w-4" />
-                  {t(opt.labelKey)}
-                </button>
-                );
-              })}
-            </div>
+            <SegmentedControl
+              ariaLabel={t("settings.appearance")}
+              value={active}
+              onChange={(k) => setTheme(k)}
+              options={
+                APPEARANCE.map((o) => ({
+                  key: o.key,
+                  label: t(o.labelKey),
+                  icon: o.icon,
+                })) as SegmentedOption<string>[]
+              }
+            />
 
             <WallpaperSection />
 
@@ -181,31 +172,15 @@ export function SettingsMenu({
             <p className="px-2 pb-1.5 text-[11px] font-medium uppercase tracking-wide text-white/55">
               {t("settings.language")}
             </p>
-            <div className="flex gap-1.5 rounded-2xl bg-black/15 p-1.5">
-              {(
-                [
-                  { key: "zh-CN", labelKey: "language.chinese" },
-                  { key: "en", labelKey: "language.english" },
-                ] as const
-              ).map((opt) => {
-                const isActive = locale === opt.key;
-                return (
-                  <button
-                    key={opt.key}
-                    type="button"
-                    onClick={() => setLocale(opt.key)}
-                    className={
-                      "flex flex-1 flex-col items-center gap-1 rounded-xl py-1.5 text-[11px] transition-colors " +
-                      (isActive
-                        ? "bg-white/25 text-white shadow-[inset_0_1px_1px_rgba(255,255,255,0.3)]"
-                        : "text-white/60 hover:text-white")
-                    }
-                  >
-                    {t(opt.labelKey)}
-                  </button>
-                );
-              })}
-            </div>
+            <SegmentedControl
+              ariaLabel={t("settings.language")}
+              value={locale}
+              onChange={setLocale}
+              options={[
+                { key: "zh-CN", label: t("language.chinese") },
+                { key: "en", label: t("language.english") },
+              ]}
+            />
 
             <div className="my-2 h-px bg-white/15" />
 

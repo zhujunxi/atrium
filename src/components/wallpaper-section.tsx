@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import { useI18n } from "@/lib/i18n";
+import { SegmentedControl, type SegmentedOption } from "@/components/ui/segmented-control";
 import type { TranslationKey } from "@/lib/i18n/types";
 import {
   loadWallpaperSettings,
@@ -55,26 +56,14 @@ export function WallpaperSection() {
       <p className="px-2 pb-1.5 text-[11px] font-medium uppercase tracking-wide text-white/55">
         {t("settings.wallpaper")}
       </p>
-      <div className="flex gap-1.5 rounded-2xl bg-black/15 p-1.5">
-        {MODES.map((opt) => {
-          const isActive = settings.mode === opt.key;
-          return (
-            <button
-              key={opt.key}
-              type="button"
-              onClick={() => update({ mode: opt.key })}
-              className={
-                "flex flex-1 items-center justify-center whitespace-nowrap rounded-xl py-1.5 text-[11px] transition-colors " +
-                (isActive
-                  ? "bg-white/25 text-white shadow-[inset_0_1px_1px_rgba(255,255,255,0.3)]"
-                  : "text-white/60 hover:text-white")
-              }
-            >
-              {t(opt.labelKey)}
-            </button>
-          );
-        })}
-      </div>
+      <SegmentedControl
+        ariaLabel={t("settings.wallpaper")}
+        value={settings.mode}
+        onChange={(k) => update({ mode: k })}
+        options={
+          MODES.map((m) => ({ key: m.key, label: t(m.labelKey) })) as SegmentedOption<WallpaperMode>[]
+        }
+      />
 
       <button
         type="button"

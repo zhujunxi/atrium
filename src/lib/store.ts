@@ -1,12 +1,40 @@
-import type { NavData, NavItem, NavLink } from "@/lib/types";
+import type { NavData, NavItem, NavLink, NavMode } from "@/lib/types";
 import { translate } from "@/lib/i18n";
 
 const STORAGE_KEY = "nav-data";
+const MODE_KEY = "nav-mode";
+
+/** 读取当前模式（local = 本地桌面 / sync = 网格即 Chrome 收藏夹），缺省 local */
+export async function loadMode(): Promise<NavMode> {
+  try {
+    const r = await chrome.storage.local.get(MODE_KEY);
+    return r[MODE_KEY] === "sync" ? "sync" : "local";
+  } catch {
+    return "local";
+  }
+}
+
+export async function saveMode(mode: NavMode): Promise<void> {
+  await chrome.storage.local.set({ [MODE_KEY]: mode });
+}
+
+/** 本地模式数据是纯本地的：剥离历史版本遗留的同步元数据（source/dirty/bmId） */
+function stripSyncMeta(items: NavItem[]): NavItem[] {
+  return items.map((it) => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { bmId: _b, ...rest } = it as any;
+    delete rest.source;
+    delete rest.dirty;
+    if (rest.type === "folder") rest.items = stripSyncMeta(rest.items ?? []);
+    return rest as NavItem;
+  });
+}
 
 /** 兼容旧版「分类」数据：categories[] 整体迁移为 桌面文件夹（沿用原 server/data.ts 逻辑） */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function migrate(raw: any): NavData {
-  if (Array.isArray(raw?.items)) return raw as NavData;
+  if (Array.isArray(raw?.items))
+    return { items: stripSyncMeta(raw.items), updatedAt: raw.updatedAt ?? new Date().toISOString() };
   if (Array.isArray(raw?.categories)) {
     const items: NavItem[] = raw.categories
       // eslint-disable-next-line @typescript-eslint/no-explicit-any

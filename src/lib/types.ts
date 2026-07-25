@@ -1,11 +1,9 @@
-/** 同步元数据：用于在 Atrium 导航与 Chrome 收藏夹之间做双向对账 */
+/** 双模式：local = 本地桌面（chrome.storage 持久化）；sync = 网格即 Chrome 收藏夹（实时双向） */
+export type NavMode = "local" | "sync";
+
+/** 同步模式下的 Chrome 书签节点 id（本地模式下的项目没有该字段） */
 export interface SyncMeta {
-  /** 来源：chrome = 来自 Chrome 收藏夹（参与双向同步）；manual / 缺省 = 本地手动 */
-  source?: "chrome" | "manual";
-  /** Chrome 书签节点的稳定 id，是双向匹配的主键 */
   bmId?: string;
-  /** Atrium 本地的未同步改动标记；同步时据此写回 Chrome */
-  dirty?: boolean;
 }
 
 export interface NavLink extends SyncMeta {

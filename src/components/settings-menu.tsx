@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import { Download, Laptop, Moon, Plus, RefreshCw, Settings, Sparkles, Sun, Upload } from "lucide-react";
+// RefreshCw 复用为「同步模式」图标
 import { useTheme } from "next-themes";
 import { toast } from "sonner";
 import { LiquidGlass } from "@/components/liquid-glass";
@@ -22,13 +23,14 @@ const APPEARANCE = [
 export function SettingsMenu({
   onImported,
   onAdd,
-  onSync,
-  lastSyncAt,
+  syncMode,
+  onToggleSyncMode,
 }: {
   onImported: (data: NavData) => void;
   onAdd: (origin: { x: number; y: number }) => void;
-  onSync: () => void;
-  lastSyncAt: number | null;
+  /** 同步模式：网格即 Chrome 收藏夹（实时双向） */
+  syncMode: boolean;
+  onToggleSyncMode: (on: boolean) => void;
 }) {
   const [open, setOpen] = React.useState(false);
   const { theme, setTheme, resolvedTheme } = useTheme();
@@ -211,51 +213,67 @@ export function SettingsMenu({
             <p className="px-2 pb-1.5 text-[11px] font-medium uppercase tracking-wide text-white/55">
               {t("settings.bookmarks")}
             </p>
-            <div className="px-1 pb-1 text-[11px] leading-snug text-white/55">
-              {t("settings.autoSync")}
-            </div>
             <button
               type="button"
-              onClick={onSync}
+              onClick={() => onToggleSyncMode(!syncMode)}
               className="flex w-full items-center gap-2.5 rounded-2xl px-3 py-2.5 text-sm text-white/85 transition-colors hover:bg-white/15 hover:text-white"
             >
               <RefreshCw className="h-4 w-4" />
-              <span className="flex-1 text-left">{t("settings.syncNow")}</span>
+              <span className="flex-1 text-left">{t("settings.syncMode")}</span>
+              <span
+                className={
+                  "relative h-5 w-9 rounded-full transition-colors " +
+                  (syncMode ? "bg-[#0A84FF]" : "bg-white/20")
+                }
+              >
+                <span
+                  className={
+                    "absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition-all " +
+                    (syncMode ? "left-[18px]" : "left-0.5")
+                  }
+                />
+              </span>
             </button>
-            {lastSyncAt != null && (
-              <p className="px-3 pb-1 pt-0.5 text-[11px] text-white/45">
-                {t("settings.lastSync")}: {new Date(lastSyncAt).toLocaleString()}
-              </p>
-            )}
+            <p className="px-3 pb-1 pt-0.5 text-[11px] leading-snug text-white/45">
+              {syncMode ? t("settings.syncModeOnDesc") : t("settings.syncModeOffDesc")}
+            </p>
 
             <div className="my-2 h-px bg-white/15" />
 
-            <p className="px-2 pb-1.5 text-[11px] font-medium uppercase tracking-wide text-white/55">
-              {t("settings.data")}
-            </p>
-            <button
-              type="button"
-              onClick={handleExport}
-              className="flex w-full items-center gap-2.5 rounded-2xl px-3 py-2.5 text-sm text-white/85 transition-colors hover:bg-white/15 hover:text-white"
-            >
-              <Download className="h-4 w-4" />
-              {t("settings.export")}
-            </button>
-            <button
-              type="button"
-              onClick={() => fileRef.current?.click()}
-              className="flex w-full items-center gap-2.5 rounded-2xl px-3 py-2.5 text-sm text-white/85 transition-colors hover:bg-white/15 hover:text-white"
-            >
-              <Upload className="h-4 w-4" />
-              {t("settings.import")}
-            </button>
-            <input
-              ref={fileRef}
-              type="file"
-              accept="application/json,.json"
-              className="hidden"
-              onChange={handleImportFile}
-            />
+            {syncMode ? (
+              <p className="px-3 py-2 text-[11px] leading-snug text-white/45">
+                {t("settings.importExportSyncHint")}
+              </p>
+            ) : (
+              <>
+                <p className="px-2 pb-1.5 text-[11px] font-medium uppercase tracking-wide text-white/55">
+                  {t("settings.data")}
+                </p>
+                <button
+                  type="button"
+                  onClick={handleExport}
+                  className="flex w-full items-center gap-2.5 rounded-2xl px-3 py-2.5 text-sm text-white/85 transition-colors hover:bg-white/15 hover:text-white"
+                >
+                  <Download className="h-4 w-4" />
+                  {t("settings.export")}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => fileRef.current?.click()}
+                  className="flex w-full items-center gap-2.5 rounded-2xl px-3 py-2.5 text-sm text-white/85 transition-colors hover:bg-white/15 hover:text-white"
+                >
+                  <Upload className="h-4 w-4" />
+                  {t("settings.import")}
+                </button>
+                <input
+                  ref={fileRef}
+                  type="file"
+                  accept="application/json,.json"
+                  className="hidden"
+                  onChange={handleImportFile}
+                />
+              </>
+            )}
           </div>
         </LiquidGlass>
       )}

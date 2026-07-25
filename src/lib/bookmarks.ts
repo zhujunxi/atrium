@@ -1,287 +1,160 @@
 /**
- * Chrome 收藏夹双向同步引擎。
+ * 同步模式引擎：网格即 Chrome 收藏夹（实时双向）。
  *
  * 设计要点：
- * - Chrome 收藏夹是「结构真相源」。每次打开/刷新新标签（或手动同步）时，
- *   Atrium 会先用 Chrome.getTree() 重新镜像出 chrome 子树（保留完整嵌套层级与顺序）。
- * - Atrium 侧对 chrome 项目的改动（新增链接/文件夹、改名、删除）通过 `dirty` 标记
- *   或「尚无 bmId 的新建项」，在重新镜像之前写回 Chrome；删除则通过持久化的
- *   `lastKnownBmIds` 基线检测。
- * - 用户在 Atrium 里把 chrome 项目「拖出/合并」视为本地另存（detach），
- *   原 Chrome 书签保持不变、继续同步；通过 detachedBmIds 避免重复导入。
- *   但「解散/删除」chrome 文件夹或链接是双向的——会从 Chrome 也一并移除。
+ * - 不再有对账 / dirty / detach——Chrome 就是唯一数据源。
+ * - 读：getTree() → 网格结构。书签栏（id=1）的内容平铺为桌面顶层；
+ *   「其他书签」（id=2）/「移动书签」（id=3）非空时作为文件夹图标出现在末尾。
+ * - 写：网格里的增 / 删 / 改 / 移动 / 排序直接调 chrome.bookmarks API。
+ * - 监听：onCreated / onChanged / onMoved / onRemoved 等事件 → 防抖刷新网格，
+ *   Chrome 侧（书签管理器 / 其他设备）的改动实时反映到桌面。
  */
 
 import type { NavFolder, NavItem, NavLink } from "@/lib/types";
-import { saveNav } from "@/lib/store";
 
-const SYNC_META_KEY = "chrome-sync-meta";
-/** 节流：距上次同步不足该时长且非强制时跳过（避免连开多个新标签狂跑） */
-const THROTTLE_MS = 10_000;
-/** 新建 chrome 项未指定父文件夹时，默认落到「其他书签」(id=2) */
-const DEFAULT_CHROME_PARENT = "2";
-/** Chrome 永久容器节点（根 0 / 书签栏 1 / 其他书签 2 / 移动书签 3），不可删除，
- *  也不作为 Atrium 文件夹呈现，需从删除检测中排除 */
+/** 书签栏：同步模式下桌面顶层的宿主容器 */
+export const BOOKMARK_BAR_ID = "1";
+/** Chrome 永久容器（根 0 / 书签栏 1 / 其他书签 2 / 移动书签 3）：不可删除 / 改名 / 移动 */
 const PERMANENT_BM_IDS = new Set(["0", "1", "2", "3"]);
 
-interface SyncMeta {
-  lastSyncAt: number;
-  /** 上次同步时已知的全部 chrome 书签 id（用于检测 Atrium 侧删除） */
-  lastKnownBmIds: string[];
-  /** 已被用户「本地另存」(detach) 的 chrome 书签 id（重新镜像时跳过导入） */
-  detachedBmIds: string[];
+export function hasBookmarksApi(): boolean {
+  return typeof chrome !== "undefined" && !!chrome.bookmarks?.getTree;
 }
 
-async function getSyncMeta(): Promise<SyncMeta> {
-  const r = await chrome.storage.local.get(SYNC_META_KEY);
-  return r[SYNC_META_KEY] ?? { lastSyncAt: 0, lastKnownBmIds: [], detachedBmIds: [] };
+export function isPermanentBm(bmId?: string): boolean {
+  return !!bmId && PERMANENT_BM_IDS.has(bmId);
 }
 
-async function setSyncMeta(m: SyncMeta): Promise<void> {
-  await chrome.storage.local.set({ [SYNC_META_KEY]: m });
-}
+/* --------------------------------- 读：镜像 --------------------------------- */
 
-/** 记录被 detach 的 chrome 书签 id（与 Chrome 同步时不再重新导入它们） */
-export async function addDetached(ids: string[]): Promise<void> {
-  if (!ids.length) return;
-  const m = await getSyncMeta();
-  const set = new Set(m.detachedBmIds);
-  for (const id of ids) set.add(id);
-  await setSyncMeta({ ...m, detachedBmIds: [...set] });
-}
-
-export interface SyncCounts {
-  added: number;
-  updated: number;
-  removed: number;
-}
-
-export interface SyncResult {
-  items: NavItem[];
-  changed: boolean;
-  updatedAt: string;
-  counts: SyncCounts;
-}
-
-/* ----------------- 由 Chrome 树递归构建嵌套导航（与 Chrome 层级/顺序完全一致） ----------------- */
-
-function buildChromeNav(
-  tree: chrome.bookmarks.BookmarkTreeNode[],
-  detached: string[]
-): NavItem[] {
-  const detachedSet = new Set(detached);
-
-  const buildItems = (node: chrome.bookmarks.BookmarkTreeNode): NavItem[] => {
-    const out: NavItem[] = [];
-    for (const c of node.children ?? []) {
-      if (c.children) {
-        out.push(buildFolder(c));
-      } else if (c.url && !detachedSet.has(c.id)) {
-        const link: NavLink = {
-          id: `bm:${c.id}`,
-          type: "link",
-          title: c.title || c.url,
-          url: c.url,
-          source: "chrome",
-          bmId: c.id,
-        };
-        out.push(link);
-      }
-    }
-    return out;
+function buildLink(node: chrome.bookmarks.BookmarkTreeNode): NavLink {
+  return {
+    id: `bm:${node.id}`,
+    type: "link",
+    title: node.title || node.url || "",
+    url: node.url || "",
+    bmId: node.id,
   };
+}
 
-  const buildFolder = (node: chrome.bookmarks.BookmarkTreeNode): NavFolder => ({
+function buildFolder(node: chrome.bookmarks.BookmarkTreeNode): NavFolder {
+  return {
     id: `bmf:${node.id}`,
     type: "folder",
     name: node.title || "Bookmarks",
-    items: buildItems(node),
-    source: "chrome",
+    items: (node.children ?? []).map((c) => (c.children ? buildFolder(c) : buildLink(c))),
     bmId: node.id,
-  });
+  };
+}
 
-  // getTree() 通常返回根节点 "0"，其 children 是 Chrome 的顶层容器
-  // （书签栏 id=1 / 其他书签 id=2 / 移动书签 id=3）。这些是 Chrome 的「伪文件夹」，
-  // Atrium 桌面直接展开它们的内容（不再包裹一层「Bookmarks Bar」），
-  // 但容器内部的嵌套子文件夹仍完整保留层级。
+/**
+ * 由 Chrome 树构建网格：书签栏内容平铺为顶层，其余容器非空时作为文件夹追加在末尾。
+ */
+export async function loadChromeNav(): Promise<NavItem[]> {
+  const tree = await chrome.bookmarks.getTree();
   const containers =
-    tree.length === 1 && tree[0].id === "0" ? tree[0].children ?? [] : tree;
+    tree.length === 1 && tree[0].id === "0" ? (tree[0].children ?? []) : tree;
   const out: NavItem[] = [];
+  const rest: NavItem[] = [];
   for (const c of containers) {
-    for (const child of c.children ?? []) {
-      if (child.children) {
-        out.push(buildFolder(child));
-      } else if (child.url && !detachedSet.has(child.id)) {
-        out.push({
-          id: `bm:${child.id}`,
-          type: "link",
-          title: child.title || child.url,
-          url: child.url,
-          source: "chrome",
-          bmId: child.id,
-        });
+    if (c.id === BOOKMARK_BAR_ID) {
+      for (const child of c.children ?? []) {
+        out.push(child.children ? buildFolder(child) : buildLink(child));
       }
+    } else if ((c.children ?? []).length > 0) {
+      rest.push(buildFolder(c));
     }
   }
-  return out;
+  return [...out, ...rest];
 }
 
-/* --------------------------------- 工具 --------------------------------- */
+/* --------------------------------- 写：代理 --------------------------------- */
 
-function collectBmIds(items: NavItem[], into: Set<string>) {
-  for (const it of items) {
-    if (it.bmId) into.add(it.bmId);
-    if (it.type === "folder") collectBmIds(it.items, into);
-  }
+export async function createBmLink(
+  parentBmId: string,
+  title: string,
+  url: string
+): Promise<void> {
+  await chrome.bookmarks.create({ parentId: parentBmId, title, url });
 }
 
-function collectBmIdsFromTree(tree: chrome.bookmarks.BookmarkTreeNode[], into: Set<string>) {
-  for (const n of tree) {
-    into.add(n.id);
-    if (n.children) collectBmIdsFromTree(n.children, into);
-  }
+export async function createBmFolder(parentBmId: string, title: string, index?: number): Promise<string | null> {
+  const node = await chrome.bookmarks.create({ parentId: parentBmId, title, index });
+  return node?.id ?? null;
 }
 
-/* ----------- 把 Atrium 侧未同步的改动（dirty / 新建 chrome 项）写回 Chrome ----------- */
-
-async function pushToChrome(
-  items: NavItem[],
-  chromeParentId: string
-): Promise<{ created: number; updated: number }> {
-  let created = 0;
-  let updated = 0;
-  for (const it of items) {
-    if (it.source !== "chrome") continue;
-    if (it.type === "folder") {
-      let bmId = it.bmId;
-      if (!bmId) {
-        const node = await chrome.bookmarks
-          .create({ parentId: chromeParentId, title: it.name })
-          .catch(() => null);
-        if (node?.id) {
-          bmId = node.id;
-          created++;
-        }
-      } else if (it.dirty) {
-        await chrome.bookmarks.update(bmId, { title: it.name }).catch(() => {});
-        updated++;
-      }
-      if (bmId) {
-        const r = await pushToChrome(it.items, bmId);
-        created += r.created;
-        updated += r.updated;
-      }
-    } else {
-      if (!it.bmId) {
-        await chrome.bookmarks
-          .create({ parentId: chromeParentId, title: it.title, url: it.url })
-          .catch(() => {});
-        created++;
-      } else if (it.dirty) {
-        await chrome.bookmarks
-          .update(it.bmId, { title: it.title, url: it.url })
-          .catch(() => {});
-        updated++;
-      }
-    }
-  }
-  return { created, updated };
+export async function updateBm(
+  bmId: string,
+  changes: { title?: string; url?: string }
+): Promise<void> {
+  await chrome.bookmarks.update(bmId, changes);
 }
 
-/* ------------------------------- 主同步流程 ------------------------------- */
+export async function removeBm(bmId: string, isFolder: boolean): Promise<void> {
+  if (isFolder) await chrome.bookmarks.removeTree(bmId);
+  else await chrome.bookmarks.remove(bmId);
+}
 
-export async function syncBookmarks(
-  current: NavItem[],
-  opts: { force?: boolean } = {}
-): Promise<SyncResult> {
-  const meta = await getSyncMeta();
-  const now = Date.now();
-  const noop = (): SyncResult => ({
-    items: current,
-    changed: false,
-    updatedAt: new Date(meta.lastSyncAt).toISOString(),
-    counts: { added: 0, updated: 0, removed: 0 },
-  });
-
-  if (!opts.force && now - meta.lastSyncAt < THROTTLE_MS) return noop();
-  // 没有 bookmarks API（权限缺失 / 非扩展环境）→ 静默跳过
-  if (typeof chrome === "undefined" || !chrome.bookmarks?.getTree) return noop();
-
-  const manual = current.filter((i) => i.source !== "chrome");
-  const chromeItems = current.filter((i) => i.source === "chrome");
-
-  let tree: chrome.bookmarks.BookmarkTreeNode[];
-  try {
-    tree = await chrome.bookmarks.getTree();
-  } catch {
-    return noop();
-  }
-
-  // 当前 chrome 子树里已知的全部 bmId
-  const currentBmIds = new Set<string>();
-  collectBmIds(chromeItems, currentBmIds);
-
-  let counts: SyncCounts = { added: 0, updated: 0, removed: 0 };
-
-  // 1) 把 Atrium 侧未同步改动写回 Chrome（含新建 chrome 文件夹/链接，递归保持层级）
-  const push = await pushToChrome(current, DEFAULT_CHROME_PARENT);
-  counts.added += push.created;
-  counts.updated += push.updated;
-
-  // 2) 检测 Atrium 侧删除：上次已知、现已不在 Atrium，且未被 detach、也非 Chrome 永久容器 → 从 Chrome 删除
-  const removedBmIds = meta.lastKnownBmIds.filter(
-    (id) => !PERMANENT_BM_IDS.has(id) && !currentBmIds.has(id) && !meta.detachedBmIds.includes(id)
-  );
-  for (const id of removedBmIds) {
+/**
+ * 移动 / 排序。index 为「目标位置的最终下标」（移除自身后的语义）。
+ * Chromium 的 BookmarkModel::Move 对同父后移会自动 -1，因此同父且目标在原位置之后时需 +1 补偿。
+ */
+export async function moveBm(bmId: string, parentBmId: string, index?: number): Promise<void> {
+  let idx = index;
+  if (idx != null) {
     try {
-      const nodes = await chrome.bookmarks.get(id);
-      if (nodes && nodes.length) {
-        await chrome.bookmarks.remove(id).catch(() => {});
-        counts.removed++;
-      }
+      const [node] = await chrome.bookmarks.get(bmId);
+      if (node?.parentId === parentBmId && node.index != null && idx > node.index) idx += 1;
     } catch {
-      /* 已不存在则忽略 */
+      /* 节点不存在时让 move 自行报错 */
     }
   }
+  await chrome.bookmarks.move(bmId, { parentId: parentBmId, index: idx });
+}
 
-  // 3) 重新镜像（写回已生效），得到与 Chrome 一致的最新结构
-  const tree2 = await chrome.bookmarks.getTree();
-  const newChrome = buildChromeNav(tree2, meta.detachedBmIds);
-  const merged: NavItem[] = [...manual, ...newChrome];
+/** 解散文件夹：子项按序移到文件夹所在父容器（追加），然后删除空文件夹 */
+export async function dissolveBmFolder(bmId: string): Promise<void> {
+  const [node] = await chrome.bookmarks.get(bmId);
+  const parentId = node?.parentId ?? BOOKMARK_BAR_ID;
+  const children = await chrome.bookmarks.getChildren(bmId);
+  for (const c of children) {
+    await chrome.bookmarks.move(c.id, { parentId });
+  }
+  await chrome.bookmarks.removeTree(bmId);
+}
 
-  // 结构变化计数（用于 toast）
-  const before = new Set<string>();
-  collectBmIds(chromeItems, before);
-  const after = new Set<string>();
-  collectBmIds(newChrome, after);
-  const structuralAdded = [...after].filter((k) => !before.has(k)).length;
-  const structuralRemoved = [...before].filter((k) => !after.has(k)).length;
-  const changed =
-    structuralAdded > 0 ||
-    structuralRemoved > 0 ||
-    push.created > 0 ||
-    push.updated > 0 ||
-    counts.removed > 0;
+/* --------------------------------- 监听 --------------------------------- */
 
-  const updatedAt = new Date().toISOString();
-  await saveNav(merged);
+const DEBOUNCE_MS = 250;
 
-  const allBmIds = new Set<string>();
-  collectBmIdsFromTree(tree2, allBmIds);
-  await setSyncMeta({
-    lastSyncAt: now,
-    lastKnownBmIds: [...allBmIds],
-    detachedBmIds: meta.detachedBmIds,
-  });
-
-  return {
-    items: merged,
-    changed,
-    updatedAt,
-    counts: {
-      added: structuralAdded + push.created,
-      updated: push.updated,
-      removed: structuralRemoved + counts.removed,
-    },
+/**
+ * 订阅 Chrome 收藏夹变更（含本扩展自身操作的回声——刷新是幂等的，无回环风险）。
+ * 返回取消订阅函数。
+ */
+export function subscribeBookmarks(onChange: () => void): () => void {
+  if (!hasBookmarksApi()) return () => {};
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  const fire = () => {
+    if (timer) clearTimeout(timer);
+    timer = setTimeout(() => {
+      timer = null;
+      onChange();
+    }, DEBOUNCE_MS);
+  };
+  const b = chrome.bookmarks;
+  b.onCreated.addListener(fire);
+  b.onRemoved.addListener(fire);
+  b.onChanged.addListener(fire);
+  b.onMoved.addListener(fire);
+  b.onChildrenReordered?.addListener(fire);
+  b.onImportEnded?.addListener(fire);
+  return () => {
+    if (timer) clearTimeout(timer);
+    b.onCreated.removeListener(fire);
+    b.onRemoved.removeListener(fire);
+    b.onChanged.removeListener(fire);
+    b.onMoved.removeListener(fire);
+    b.onChildrenReordered?.removeListener(fire);
+    b.onImportEnded?.removeListener(fire);
   };
 }

@@ -15,7 +15,20 @@ import { AppIcon, FolderIcon } from "@/components/app-icon";
 import { LiquidGlass } from "@/components/liquid-glass";
 import { LinkDialog, type LinkDialogState, type LinkFormValues } from "@/components/dialogs/link-dialog";
 import { useI18n, translate } from "@/lib/i18n";
-import { syncBookmarks, addDetached } from "@/lib/bookmarks";
+import { loadNav, saveMode } from "@/lib/store";
+import {
+  BOOKMARK_BAR_ID,
+  createBmFolder,
+  createBmLink,
+  dissolveBmFolder,
+  hasBookmarksApi,
+  isPermanentBm,
+  loadChromeNav,
+  moveBm,
+  removeBm,
+  subscribeBookmarks,
+  updateBm,
+} from "@/lib/bookmarks";
 
 const ENGINES = [
   { key: "bing", nameKey: "engine.bing", url: (q: string) => `https://www.bing.com/search?q=${encodeURIComponent(q)}` },
@@ -190,31 +203,6 @@ function pruneEmptyFolders(items: NavItem[]): NavItem[] {
     .filter((i) => i.type !== "folder" || i.items.length > 0);
 }
 
-/** 把 chrome 同步链接「本地另存」为独立副本：丢掉 bmId/source/dirty，换上新 id。
- *  原 Chrome 书签保持不变、继续同步，避免重新镜像时被重复导入。 */
-function detachLink(link: NavLink): NavLink {
-  return {
-    id: newId("lk"),
-    type: "link",
-    title: link.title,
-    url: link.url,
-    description: link.description,
-    source: "manual",
-  };
-}
-
-/** 递归地把任意 chrome 同步项（链接或嵌套文件夹）本地另存为独立副本 */
-function detachItem(item: NavItem): NavItem {
-  if (item.type === "link") return detachLink(item);
-  return {
-    id: newId("fd"),
-    type: "folder",
-    name: item.name,
-    items: item.items.map(detachItem),
-    source: "manual",
-  };
-}
-
 function insertLink(items: NavItem[], folderId: string | null, item: NavItem): NavItem[] {
   if (!folderId) return [...items, item];
   return items.map((f) =>
@@ -248,22 +236,16 @@ function flattenFolderOptions(
   return out;
 }
 
-/** 桌面上把 dragged 叠放到 target 上，生成新文件夹（占据 target 原位置） */
+/** 桌面上把 dragged 叠放到 target 上，生成新文件夹（占据 target 原位置）——仅本地模式 */
 function mergeIntoFolder(items: NavItem[], dragId: string, targetId: string): NavItem[] {
   const dragged = findItem(items, dragId);
   const target = findItem(items, targetId);
   if (!dragged || !target || dragged.type !== "link" || target.type !== "link") return items;
-  // 涉及 chrome 同步项 → 本地另存为独立副本（原 chrome 书签保留）
-  const dDet = dragged.bmId ? detachLink(dragged) : dragged;
-  const tDet = target.bmId ? detachLink(target) : target;
-  if (dragged.bmId) addDetached([dragged.bmId]);
-  if (target.bmId) addDetached([target.bmId]);
   const folder: NavFolder = {
     id: newId("fd"),
     type: "folder",
     name: translate("common.newFolder"),
-    items: [tDet, dDet],
-    source: "manual",
+    items: [target, dragged],
   };
   const targetContainer = findContainer(items, targetId) ?? "root";
   const targetIdx = indexInContainer(items, targetContainer, targetId);
@@ -273,28 +255,14 @@ function mergeIntoFolder(items: NavItem[], dragId: string, targetId: string): Na
   return next;
 }
 
+/** 解散文件夹：子项按原顺序提升到父容器——仅本地模式 */
 function dissolveFolder(items: NavItem[], folderId: string): NavItem[] {
   const folder = findFolder(items, folderId);
   if (!folder) return items;
-  // chrome 文件夹「解散」= 双向删除：子项（含嵌套子文件夹）本地另存为副本提升到父容器，
-  // 而原 chrome 文件夹本身会从 Chrome 也一并移除（与删除 chrome 链接一致，保持双向一致）。
-  // 子项先 detach，避免文件夹删除失败时被重新镜像重复导入。
-  const detached = folder.items.map(detachItem);
-  // 递归收集「子项」的 chrome bmId 并 detach（文件夹自身的 bmId 不 detach，留待同步时从 Chrome 删除）
-  const bmIds: string[] = [];
-  const collect = (arr: NavItem[]) => {
-    for (const it of arr) {
-      if (it.bmId) bmIds.push(it.bmId);
-      if (it.type === "folder") collect(it.items);
-    }
-  };
-  collect(folder.items);
-  if (bmIds.length) addDetached(bmIds);
   const parent = findParent(items, folderId) ?? "root";
   const idx = indexInContainer(items, parent, folderId);
   let next = removeFrom(items, parent, folderId);
-  // 按原顺序把子项插回父容器
-  detached.forEach((it, i) => {
+  folder.items.forEach((it, i) => {
     next = insertAt(next, parent, idx + i, it);
   });
   return next;
@@ -309,9 +277,19 @@ interface DragState {
   folderTargetId: string | null;
 }
 
-export function NavApp({ initialData }: { initialData: NavData }) {
+export function NavApp({
+  initialData,
+  initialSyncMode,
+}: {
+  initialData: NavData;
+  initialSyncMode: boolean;
+}) {
   const [items, setItems] = React.useState<NavItem[]>(initialData.items);
   const [updatedAt, setUpdatedAt] = React.useState(initialData.updatedAt);
+  /** 同步模式：网格即 Chrome 收藏夹（实时双向）；关闭时为本地桌面 */
+  const [syncMode, setSyncMode] = React.useState(initialSyncMode);
+  const syncModeRef = React.useRef(syncMode);
+  syncModeRef.current = syncMode;
   const { t, locale } = useI18n();
   const [query, setQuery] = React.useState("");
   // 记住上次选的搜索引擎：首屏直接从 localStorage 同步读出（不闪）；切换时直接写回
@@ -337,10 +315,6 @@ export function NavApp({ initialData }: { initialData: NavData }) {
   const [originRect, setOriginRect] = React.useState<DOMRect | null>(null);
   const [drag, setDrag] = React.useState<DragState | null>(null);
   const [linkDialog, setLinkDialog] = React.useState<LinkDialogState>({ open: false, folderId: null });
-  /** Chrome 收藏夹同步状态（上次同步时间戳），用于设置面板展示 */
-  const [syncInfo, setSyncInfo] = React.useState<{ lastSyncAt: number | null }>({ lastSyncAt: null });
-  /** 防止自动同步与手动同步并发 */
-  const syncGuardRef = React.useRef(false);
   /** Launchpad 分页：当前页码（由 pager 物理层回报） */
   const [page, setPage] = React.useState(0);
 
@@ -410,6 +384,8 @@ export function NavApp({ initialData }: { initialData: NavData }) {
 
   const persist = React.useCallback((next: NavItem[]) => {
     setItems(next);
+    // 同步模式：Chrome 即数据库，结构由 API 调用落地，不写本地存储
+    if (syncModeRef.current) return;
     if (saveTimer.current) window.clearTimeout(saveTimer.current);
     saveTimer.current = window.setTimeout(async () => {
       try {
@@ -421,43 +397,59 @@ export function NavApp({ initialData }: { initialData: NavData }) {
     }, 350);
   }, []);
 
-  /* ---------- Chrome 收藏夹同步 ---------- */
+  /* ---------- 同步模式：网格即 Chrome 收藏夹 ---------- */
 
-  const runSync = React.useCallback(async (force: boolean) => {
-    if (syncGuardRef.current) return;
-    syncGuardRef.current = true;
+  const refreshChrome = React.useCallback(async () => {
     try {
-      const res = await syncBookmarks(itemsRef.current, { force });
-      if (res.changed) {
-        setItems(res.items);
-        setUpdatedAt(res.updatedAt);
-      }
-      setSyncInfo({ lastSyncAt: Date.parse(res.updatedAt) });
-      return res;
-    } finally {
-      syncGuardRef.current = false;
-    }
-  }, []);
-
-  // 打开 / 刷新新标签页时自动同步一次（受节流保护，连开多标签不会狂跑）
-  React.useEffect(() => {
-    runSync(false).catch(() => {});
-    // 仅在挂载时触发一次
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  const handleSync = React.useCallback(async () => {
-    try {
-      const res = await runSync(true);
-      if (res) {
-        const n = res.counts.added + res.counts.updated + res.counts.removed;
-        if (n > 0) toast.success(t("toast.syncDone"));
-        else toast.success(t("toast.syncNoChange"));
-      }
+      setItems(await loadChromeNav());
     } catch {
-      toast.error(t("toast.syncFail"));
+      /* 瞬断静默：下一次事件会再触发刷新 */
     }
-  }, [t]);
+  }, []);
+
+  // 开启同步模式时：加载镜像 + 订阅 Chrome 侧变更（书签管理器 / 其他标签页 / 其他设备）
+  React.useEffect(() => {
+    if (!syncMode) return;
+    refreshChrome();
+    return subscribeBookmarks(() => {
+      if (dragRef.current) return; // 拖拽中不打断，落手后统一刷新
+      refreshChrome();
+    });
+  }, [syncMode, refreshChrome]);
+
+  const handleToggleSyncMode = React.useCallback(
+    async (on: boolean) => {
+      if (on && !hasBookmarksApi()) {
+        toast.error(t("toast.syncUnavailable"));
+        return;
+      }
+      await saveMode(on ? "sync" : "local");
+      setSyncMode(on);
+      if (on) {
+        toast.success(t("toast.syncModeOn"));
+        // 网格数据由订阅 effect 的 refreshChrome 加载
+      } else {
+        const data = await loadNav();
+        setItems(data.items);
+        setUpdatedAt(data.updatedAt);
+        toast.success(t("toast.syncModeOff"));
+      }
+    },
+    [t]
+  );
+
+  /** 同步模式：容器 → Chrome 父节点 id */
+  const bmParentOf = React.useCallback((c: Container): string | null => {
+    if (c === "root") return BOOKMARK_BAR_ID;
+    const f = findFolder(itemsRef.current, c);
+    return f?.bmId ?? null;
+  }, []);
+
+  /** 同步模式：root 网格下标 → 书签栏内下标（末尾的「其他书签」等伪文件夹不占位） */
+  const barIndexOf = React.useCallback((idx: number): number => {
+    const barCount = itemsRef.current.filter((i) => !isPermanentBm(i.bmId)).length;
+    return Math.max(0, Math.min(idx, barCount));
+  }, []);
 
   /* ---------- 指针编排：长按进编辑 / 拖拽 / 点击 ---------- */
 
@@ -490,8 +482,79 @@ export function NavApp({ initialData }: { initialData: NavData }) {
     }
   }
 
+  /** 同步模式落手：把拖拽结果直接提交给 Chrome（合并建夹 / 收纳 / 拖出 / 排序），然后重新镜像 */
+  const finalizeDropSync = React.useCallback(
+    async (d: DragState, e: PointerEvent) => {
+      try {
+        const cur = itemsRef.current;
+        const dragged = findItem(cur, d.id);
+        // 伪文件夹（其他书签等）不可移动：直接刷新弹回
+        if (!dragged || isPermanentBm(dragged.bmId)) return void (await refreshChrome());
+
+        if (d.mergeTargetId) {
+          const target = findItem(cur, d.mergeTargetId);
+          if (dragged.type === "link" && target?.type === "link" && dragged.bmId && target.bmId) {
+            const tIdx = indexInContainer(cur, "root", d.mergeTargetId);
+            const folderId = await createBmFolder(
+              BOOKMARK_BAR_ID,
+              translate("common.newFolder"),
+              barIndexOf(tIdx)
+            );
+            if (folderId) {
+              await moveBm(target.bmId, folderId);
+              await moveBm(dragged.bmId, folderId);
+              toast.success(t("toast.folderCreated"));
+            }
+          }
+          return void (await refreshChrome());
+        }
+
+        if (d.folderTargetId) {
+          const folder = findFolder(cur, d.folderTargetId);
+          if (dragged.bmId && folder?.bmId) {
+            await moveBm(dragged.bmId, folder.bmId);
+            toast.success(t("toast.filedIntoFolder"));
+          }
+          return void (await refreshChrome());
+        }
+
+        if (d.container !== "root") {
+          const rect = panelRef.current?.getBoundingClientRect();
+          const inside =
+            !!rect &&
+            e.clientX >= rect.left &&
+            e.clientX <= rect.right &&
+            e.clientY >= rect.top &&
+            e.clientY <= rect.bottom;
+          if (!inside && dragged.type === "link" && dragged.bmId) {
+            // 拖出文件夹 → 移到书签栏末尾（真实 move，双向生效）
+            await moveBm(dragged.bmId, BOOKMARK_BAR_ID);
+            return void (await refreshChrome());
+          }
+        }
+
+        // 同容器排序：把拖拽期间的实时顺序提交给 Chrome
+        const c = findContainer(cur, d.id) ?? "root";
+        const parentBm = bmParentOf(c);
+        if (dragged.bmId && parentBm) {
+          const idx = indexInContainer(cur, c, d.id);
+          await moveBm(dragged.bmId, parentBm, c === "root" ? barIndexOf(idx) : idx);
+        }
+        await refreshChrome();
+      } catch {
+        toast.error(t("toast.opFail"));
+        await refreshChrome();
+      }
+    },
+    [refreshChrome, bmParentOf, barIndexOf, t]
+  );
+
   const finalizeDrop = React.useCallback(
     (d: DragState, e: PointerEvent) => {
+      if (syncModeRef.current) {
+        void finalizeDropSync(d, e);
+        return;
+      }
       let next = itemsRef.current;
       if (d.mergeTargetId) {
         next = mergeIntoFolder(next, d.id, d.mergeTargetId);
@@ -517,14 +580,8 @@ export function NavApp({ initialData }: { initialData: NavData }) {
           // 拖出文件夹 → 放到桌面末尾；空文件夹自动移除
           const dragged = findItem(next, d.id);
           if (dragged && dragged.type === "link") {
-            // 从 chrome 文件夹拖出 → 本地另存，原 chrome 书签保留
-            const fromFolder = next.find(
-              (f) => f.type === "folder" && f.id === d.container && f.bmId != null
-            );
-            const placed = dragged.bmId && fromFolder ? detachLink(dragged) : dragged;
-            if (dragged.bmId && fromFolder) addDetached([dragged.bmId]);
             next = removeFrom(next, d.container, d.id);
-            next = [...next, placed];
+            next = [...next, dragged];
             next = pruneEmptyFolders(next);
             if (openFolderRef.current && !next.some((f) => f.id === openFolderRef.current)) {
               setOpenFolderId(null);
@@ -539,7 +596,7 @@ export function NavApp({ initialData }: { initialData: NavData }) {
       }
       persist(next);
     },
-    [persist]
+    [persist, finalizeDropSync]
   );
 
   React.useEffect(() => {
@@ -681,7 +738,9 @@ export function NavApp({ initialData }: { initialData: NavData }) {
       pressRef.current = null;
       if (p.dragging) {
         setDrag(null);
-        persist(itemsRef.current);
+        // 同步模式：取消拖拽 → 从 Chrome 重新镜像弹回；本地模式照旧落盘
+        if (syncModeRef.current) refreshChrome();
+        else persist(itemsRef.current);
       }
     }
 
@@ -693,7 +752,7 @@ export function NavApp({ initialData }: { initialData: NavData }) {
       window.removeEventListener("pointerup", onUp);
       window.removeEventListener("pointercancel", onCancel);
     };
-  }, [finalizeDrop, persist]);
+  }, [finalizeDrop, persist, refreshChrome]);
 
   // Esc：先关文件夹，再退出编辑
   React.useEffect(() => {
@@ -849,7 +908,32 @@ export function NavApp({ initialData }: { initialData: NavData }) {
   /* ---------- 结构操作 ---------- */
 
   const handleDeleteItem = React.useCallback(
-    (item: NavItem) => {
+    async (item: NavItem) => {
+      // 同步模式：直接操作 Chrome 收藏夹（网格即 Chrome）
+      if (syncModeRef.current) {
+        if (!item.bmId) return;
+        if (isPermanentBm(item.bmId)) {
+          toast.error(t("toast.permanentFolder"));
+          return;
+        }
+        try {
+          if (item.type === "link") {
+            if (!window.confirm(t("confirm.deleteLink", { title: item.title }))) return;
+            await removeBm(item.bmId, false);
+            toast.success(t("toast.deleted"));
+          } else {
+            const n = item.items.length;
+            if (n > 0 && !window.confirm(t("confirm.dissolveFolder", { name: item.name, n }))) return;
+            await dissolveBmFolder(item.bmId);
+            toast.success(n > 0 ? t("toast.folderDissolved") : t("toast.emptyFolderDeleted"));
+            // 注：同步模式下解散文件夹 = 子项提升到父容器（与本地一致，避免误删）
+          }
+        } catch {
+          toast.error(t("toast.opFail"));
+        }
+        await refreshChrome();
+        return;
+      }
       if (item.type === "link") {
         if (!window.confirm(t("confirm.deleteLink", { title: item.title }))) return;
         const c = findContainer(itemsRef.current, item.id);
@@ -867,59 +951,98 @@ export function NavApp({ initialData }: { initialData: NavData }) {
         toast.success(n > 0 ? t("toast.folderDissolved") : t("toast.emptyFolderDeleted"));
       }
     },
-    [persist]
+    [persist, refreshChrome, t]
   );
 
-  function handleRenameFolder(id: string, name: string) {
+  async function handleRenameFolder(id: string, name: string) {
     const folder = findFolder(itemsRef.current, id);
     if (!folder) return;
-    // chrome 文件夹改名 → 标 dirty 写回 Chrome
-    const patch: Partial<NavFolder> = folder.bmId ? { name, dirty: true } : { name };
+    if (syncModeRef.current) {
+      if (!folder.bmId || isPermanentBm(folder.bmId)) {
+        toast.error(t("toast.permanentFolder"));
+        return;
+      }
+      try {
+        await updateBm(folder.bmId, { title: name });
+      } catch {
+        toast.error(t("toast.opFail"));
+      }
+      await refreshChrome();
+      return;
+    }
+    const patch: Partial<NavFolder> = { name };
     persist(patchFolder(itemsRef.current, id, patch));
   }
 
-  function handleAddFolder(parentId: string | null) {
-    const parent = parentId ? findFolder(itemsRef.current, parentId) : null;
-    const isChrome = !!parent && parent.bmId != null;
+  async function handleAddFolder(parentId: string | null) {
+    if (syncModeRef.current) {
+      const parentBm = bmParentOf(parentId ?? "root");
+      if (!parentBm) return;
+      try {
+        await createBmFolder(parentBm, translate("common.newFolder"));
+        toast.success(t("toast.folderCreated"));
+      } catch {
+        toast.error(t("toast.opFail"));
+      }
+      await refreshChrome();
+      return;
+    }
     const folder: NavFolder = {
       id: newId("fd"),
       type: "folder",
       name: translate("common.newFolder"),
       items: [],
-      ...(isChrome ? { source: "chrome", dirty: true } : {}),
     };
     const next = insertLink(itemsRef.current, parentId, folder);
     persist(next);
     toast.success(t("toast.folderCreated"));
   }
 
-  function handleLinkSubmit(values: LinkFormValues) {
+  async function handleLinkSubmit(values: LinkFormValues) {
     const { initial } = linkDialog;
     let next = itemsRef.current;
+    if (syncModeRef.current) {
+      try {
+        if (initial?.bmId) {
+          const curContainer = findContainer(itemsRef.current, initial.id) ?? "root";
+          const curParentBm = bmParentOf(curContainer);
+          const targetParentBm = bmParentOf(values.folderId ?? "root");
+          await updateBm(initial.bmId, { title: values.title, url: values.url });
+          if (targetParentBm && targetParentBm !== curParentBm) {
+            await moveBm(initial.bmId, targetParentBm);
+          }
+          toast.success(t("toast.linkUpdated"));
+        } else {
+          const parentBm = bmParentOf(values.folderId ?? "root");
+          if (parentBm) {
+            await createBmLink(parentBm, values.title, values.url);
+            toast.success(t("toast.linkAdded"));
+          }
+        }
+      } catch {
+        toast.error(t("toast.opFail"));
+      }
+      await refreshChrome();
+      return;
+    }
     if (initial) {
-      // 编辑：保留 bmId/source；若是 chrome 同步项则标 dirty 写回 Chrome
       const link: NavLink = {
         ...initial,
         title: values.title,
         url: values.url,
         description: values.description || undefined,
-        ...(initial.bmId ? { dirty: true } : {}),
       };
       const c = findContainer(next, initial.id);
       next = removeFrom(next, c ?? "root", initial.id);
       next = insertLink(next, values.folderId, link);
       toast.success(t("toast.linkUpdated"));
     } else {
-      // 新建：放入 chrome 文件夹则作为 chrome 项（dirty）写回 Chrome
-      const folder = values.folderId ? findFolder(next, values.folderId) : null;
-      const isChromeFolder = !!folder && folder.bmId != null;
       const link: NavLink = {
         id: newId("lk"),
         type: "link",
         title: values.title,
         url: values.url,
         description: values.description || undefined,
-        ...(isChromeFolder ? { source: "chrome", dirty: true } : {}),
       };
       next = insertLink(next, values.folderId, link);
       toast.success(t("toast.linkAdded"));
@@ -974,8 +1097,8 @@ export function NavApp({ initialData }: { initialData: NavData }) {
           setUpdatedAt(data.updatedAt);
         }}
         onAdd={(origin) => setLinkDialog({ open: true, folderId: null, origin })}
-        onSync={handleSync}
-        lastSyncAt={syncInfo.lastSyncAt}
+        syncMode={syncMode}
+        onToggleSyncMode={handleToggleSyncMode}
       />
 
       <main

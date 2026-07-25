@@ -20,14 +20,14 @@
 
 ## 功能
 
-- 🧊 **液态玻璃 UI** — 真 SVG 位移折射的玻璃控件，全出血 squircle 应用图标
+- 🔖 **Chrome 收藏夹同步** — 双向同步，把 Chrome 收藏夹（含嵌套子文件夹）镜像到新标签页；在 Atrium 里的改动会写回 Chrome，打开/刷新新标签自动对账
 - 🖼️ **每日壁纸** — Bing 每日图，支持「换一张」与自动轮播
-- 🗂️ **Launchpad 交互** — 长按进入编辑、拖拽排序、拖叠建文件夹、分页翻动
 - 🔍 **聚合搜索** — 必应 / Google / 百度 / GitHub 一键切换
+- 🗂️ **Launchpad 交互** — 长按进入编辑、拖拽排序、拖叠建文件夹、分页翻动
+- 🧊 **液态玻璃 UI** — 真 SVG 位移折射的玻璃控件，全出血 squircle 应用图标
 - 🌗 **深色 / 浅色 / 跟随系统**
 - 💾 **纯本地存储** — 数据存 `chrome.storage.local`，支持一键导出 / 导入备份
 - 🔒 **隐私优先** — 默认仅需 Bing 一个主机权限；高清图标为可选能力，按需申请
-- 🔖 **Chrome 收藏夹同步** — 双向同步，把 Chrome 收藏夹（含嵌套子文件夹）镜像到新标签页；在 Atrium 里的改动会写回 Chrome，打开/刷新新标签自动对账
 
 ## 截图
 
@@ -51,11 +51,11 @@ Atrium 提供三种安装方式，按需选择。
 
 ### 方式一 · Chrome 网上应用店（推荐）
 
-> 🚧 即将上线。发布后点击以下按钮即可一键安装：
->
-> [![Chrome Web Store](https://img.shields.io/badge/Chrome%20Web%20Store-%E5%8D%B3%E5%B0%86%E4%B8%8A%E7%BA%BF-4285F4?logo=googlechrome&logoColor=white)](https://chrome.google.com/webstore)
->
-> 商店版会自动更新，无需手动操作。
+点击以下按钮即可从 Chrome 网上应用店一键安装：
+
+[![Chrome Web Store](https://img.shields.io/badge/Chrome%20Web%20Store-%E7%82%B9%E5%87%BB%E5%AE%89%E8%A3%85-4285F4?logo=googlechrome&logoColor=white)](https://chromewebstore.google.com/detail/atrium/faikkmodhmigmjdglkccjmgmdlieagdm)
+
+商店版会自动更新，无需手动操作。
 
 ### 方式二 · 从 Release 下载预构建包
 

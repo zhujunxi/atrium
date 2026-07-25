@@ -20,14 +20,14 @@ It mirrors your Chrome bookmarks — nested folders included — straight into t
 
 ## Features
 
-- 🧊 **Liquid-glass UI** — real SVG displacement-refraction glass controls, full-bleed squircle app icons
+- 🔖 **Chrome bookmarks sync** — two-way sync mirrors your Chrome bookmarks (nested folders included) into the new tab; edits sync back to Chrome, and open/refresh auto-syncs
 - 🖼️ **Daily wallpaper** — Bing daily image, with "next" shuffle and auto-rotation
-- 🗂️ **Launchpad interaction** — long-press to edit, drag-to-reorder, drag-to-fold folders, paged navigation
 - 🔍 **Unified search** — Bing / Google / Baidu / GitHub one-click switch
+- 🗂️ **Launchpad interaction** — long-press to edit, drag-to-reorder, drag-to-fold folders, paged navigation
+- 🧊 **Liquid-glass UI** — real SVG displacement-refraction glass controls, full-bleed squircle app icons
 - 🌗 **Dark / Light / System**
 - 💾 **Local-only storage** — data in `chrome.storage.local`, with one-click export / import backup
 - 🔒 **Privacy-first** — only the Bing host permission by default; high-res icons are an optional, on-demand capability
-- 🔖 **Chrome bookmarks sync** — two-way sync mirrors your Chrome bookmarks (nested folders included) into the new tab; edits sync back to Chrome, and open/refresh auto-syncs
 
 ## Screenshots
 
@@ -51,11 +51,11 @@ Atrium offers three install methods — pick whichever fits.
 
 ### Method 1 · Chrome Web Store (recommended)
 
-> 🚧 Coming soon. Once published, install with one click:
->
-> [![Chrome Web Store](https://img.shields.io/badge/Chrome%20Web%20Store-coming%20soon-4285F4?logo=googlechrome&logoColor=white)](https://chrome.google.com/webstore)
->
-> Store builds update automatically — no manual steps.
+Install with one click from the Chrome Web Store:
+
+[![Chrome Web Store](https://img.shields.io/badge/Chrome%20Web%20Store-install%20now-4285F4?logo=googlechrome&logoColor=white)](https://chromewebstore.google.com/detail/atrium/faikkmodhmigmjdglkccjmgmdlieagdm)
+
+Store builds update automatically — no manual steps.
 
 ### Method 2 · Download a prebuilt package from Release
 

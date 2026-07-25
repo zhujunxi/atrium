@@ -1,6 +1,11 @@
 import * as React from "react";
 import { domainOf } from "@/lib/utils";
-import { ensureFavicon, getCachedSync } from "@/lib/faviconCache";
+import {
+  ensureFavicon,
+  getCachedSync,
+  getCachedEntry,
+  isNoIconCachedSync,
+} from "@/lib/faviconCache";
 
 const HI_RES_KEY = "hi-res-favicon";
 
@@ -67,43 +72,62 @@ export function requestHiResIcon(url: string): Promise<string | null> {
 }
 
 /**
- * 图标候选 hook：优先返回本地缓存的 dataURL（瞬时、无流量、无闪屏）；
- * 缓存未命中时才回源抓取并入库，仅在确认全部 miss 后保留远程候选链兜底。
- * 关键点：首帧绝不主动渲染远程地址，否则每次刷新都会抢先发网络请求，
- * 缓存形同虚设。
+ * 图标候选 hook 的返回：候选地址链 + 是否强制字母头像。
+ * - 缓存命中的正图：candidates=[dataURL]、forceLetter=false（瞬时、零网络、无闪屏）；
+ * - 缓存确认无图标：candidates=[]、forceLetter=true（直接字母头像，零网络）；
+ * - 未命中：先空，回源抓取后按结果决定；纯瞬断等不确定失败时退化为远程直连兜底。
+ * 首帧绝不主动渲染远程地址，否则每次刷新都会抢先发网络请求，缓存形同虚设。
  */
-export function useFavicon(url: string): string[] {
+export interface FaviconState {
+  candidates: string[];
+  forceLetter: boolean;
+}
+
+export function useFavicon(url: string): FaviconState {
   const base = React.useMemo(() => faviconCandidates(url), [url]);
   const domain = React.useMemo(() => domainOf(url), [url]);
   const variant = isHiResEnabled() ? "hd" : "std";
 
-  // 初始只信任「已在内存」的命中；内存未命中则先渲染空（白底占位），
-  // 不急着发远程请求，等异步查到缓存/回源后再决定。
-  const [candidates, setCandidates] = React.useState<string[]>(() => {
+  // 初始只信任「已在内存」的结果：正图瞬时出图，确认无图标直接字母头像，
+  // 二者都不在内存则先渲染空（白底占位），不急着发远程请求。
+  const [state, setState] = React.useState<FaviconState>(() => {
     const cached = getCachedSync(domain, variant);
-    return cached ? [cached] : [];
+    if (cached) return { candidates: [cached], forceLetter: false };
+    if (isNoIconCachedSync(domain, variant)) return { candidates: [], forceLetter: true };
+    return { candidates: [], forceLetter: false };
   });
 
   React.useEffect(() => {
     let active = true;
     (async () => {
+      // 已知结果（正图或确认无图标）直接出，零网络、不闪
+      const known = await getCachedEntry(domain, variant);
+      if (known) {
+        if (!active) return;
+        setState(
+          known.dataUrl
+            ? { candidates: [known.dataUrl], forceLetter: false }
+            : { candidates: [], forceLetter: true }
+        );
+        return;
+      }
+
       let remoteTry = base;
-      let v = variant;
       if (isHiResEnabled()) {
         const hi = await requestHiResIcon(url);
-        if (hi) {
-          remoteTry = [hi, ...base];
-          v = "hd";
-        }
+        if (hi) remoteTry = [hi, ...base];
       }
-      const dataUrl = await ensureFavicon(domain, remoteTry, v);
+      const res = await ensureFavicon(domain, remoteTry, variant);
       if (!active) return;
-      if (dataUrl) {
-        setCandidates([dataUrl]); // 本地命中/回源成功：仅用本地 dataURL，不发远程请求
+
+      if (res.status === "positive") {
+        setState({ candidates: [res.dataUrl], forceLetter: false });
+      } else if (res.status === "negative") {
+        // 确凿无图标（已写入负缓存）：直接字母头像，刷新不再请求、不再闪
+        setState({ candidates: [], forceLetter: true });
       } else {
-        // DDG 占位图已被 SW 判为「无图标」返回 null，这里不再回退到 DDG（否则又显示箭头），
-        // 仅保留站点根兜底，最终失败由组件 onError 落到字母头像。
-        setCandidates([base[1]]);
+        // 纯瞬断等不确定失败：退化远程直连兜底（同改造前），失败由组件 onError 落到字母头像
+        setState({ candidates: [base[1]], forceLetter: false });
       }
     })();
 
@@ -113,5 +137,5 @@ export function useFavicon(url: string): string[] {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [url, variant]);
 
-  return candidates;
+  return state;
 }

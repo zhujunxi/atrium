@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { cn, gradientFor } from "@/lib/utils";
 import { useFavicon } from "@/lib/favicon";
 import type { NavItem, NavLink } from "@/lib/types";
@@ -21,10 +21,15 @@ export function AppIcon({
   size?: number;
   className?: string;
 }) {
-  const candidates = useFavicon(link.url);
+  const { candidates, forceLetter } = useFavicon(link.url);
   const [srcIndex, setSrcIndex] = useState(0);
   const [useLetter, setUseLetter] = useState(false);
   const letter = (link.title.trim()[0] || "·").toUpperCase();
+  // 已知无图标（负缓存命中）直接字母头像；切换链接时重置回退状态，避免沿用旧图
+  useEffect(() => {
+    setSrcIndex(0);
+    setUseLetter(forceLetter);
+  }, [link.url, forceLetter]);
   // 支持外层通过 --lp-icon 响应式覆盖尺寸；默认回退到传入的 size
   const sizeVar = `var(--lp-icon, ${size}px)`;
 
@@ -76,10 +81,15 @@ export function AppIcon({
 
 /** 文件夹内迷你预览图标（3x3 宫格用），样式与主图标一致：成功白底 + favicon，失败才渐变 + 首字母 */
 function MiniIcon({ link, size }: { link: NavLink; size: number | string }) {
-  const candidates = useFavicon(link.url);
+  const { candidates, forceLetter } = useFavicon(link.url);
   const [srcIndex, setSrcIndex] = useState(0);
   const [useLetter, setUseLetter] = useState(false);
   const letter = (link.title.trim()[0] || "·").toUpperCase();
+  // 已知无图标（负缓存命中）直接字母头像；切换链接时重置回退状态，避免沿用旧图
+  useEffect(() => {
+    setSrcIndex(0);
+    setUseLetter(forceLetter);
+  }, [link.url, forceLetter]);
   const fontSize = typeof size === "number" ? size * 0.5 : `calc(${size} * 0.5)`;
   return (
     <span

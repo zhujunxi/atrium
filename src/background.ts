@@ -123,9 +123,14 @@ const DDG_PLACEHOLDER_SHA256 =
  * 抓取远程图标字节并转 dataURL。需针对目标主机声明 host_permissions：
  * - icons.duckduckgo.com（默认主机权限）覆盖低清；
  * - <all_urls>（开启高清图标时）覆盖站点自身图标。
- * 命中 DDG 默认占位图 / 无权限 / 跨域被拦 / 超时均返回 null，由页面退化为兜底。
+ * 返回：
+ *  - { dataUrl }：成功抓到图标字节；
+ *  - { noIcon: true }：命中 DDG 默认占位图，确凿无图标（页面据此写负缓存）；
+ *  - null：无权限 / 跨域被拦 / 超时 / 瞬断等不确定失败（不缓存，下次可重试）。
  */
-async function fetchIconBytes(remoteUrl: string): Promise<{ dataUrl: string } | null> {
+async function fetchIconBytes(
+  remoteUrl: string
+): Promise<{ dataUrl: string } | { noIcon: true } | null> {
   try {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 8000);
@@ -133,10 +138,10 @@ async function fetchIconBytes(remoteUrl: string): Promise<{ dataUrl: string } | 
     clearTimeout(timer);
     if (!res.ok) return null;
     const buf = await res.arrayBuffer();
-    // 识别 DDG 默认占位图：视为无图标，不缓存、不走 dataURL
+    // 识别 DDG 默认占位图：确凿无图标，返回 noIcon 由页面写入负缓存（不再请求、不再闪）
     if (remoteUrl.includes("icons.duckduckgo.com")) {
       const hash = await sha256Hex(buf);
-      if (hash === DDG_PLACEHOLDER_SHA256) return null;
+      if (hash === DDG_PLACEHOLDER_SHA256) return { noIcon: true };
     }
     const ct = res.headers.get("content-type") || "image/x-icon";
     // 部分服务返回 text/plain 等非图片 mime，统一回退到图标类型以正确解码

@@ -136,10 +136,25 @@ async function fetchIconBytes(
     const timer = setTimeout(() => controller.abort(), 8000);
     const res = await fetch(remoteUrl, { signal: controller.signal, cache: "force-cache" });
     clearTimeout(timer);
-    if (!res.ok) return null;
+    const isDDG = remoteUrl.includes("icons.duckduckgo.com");
+
+    // DDG 对「无 favicon」域名返回固定占位图（灰圈+白箭头，1478 字节），但状态码是 404 而非 200。
+    // 因此非 200 时也要读 body 校验占位图：命中即确凿无图标（写负缓存），否则才算瞬断。
+    if (!res.ok) {
+      if (isDDG) {
+        try {
+          const buf = await res.arrayBuffer();
+          if ((await sha256Hex(buf)) === DDG_PLACEHOLDER_SHA256) return { noIcon: true };
+        } catch {
+          /* 读 body 失败，按瞬断处理 */
+        }
+      }
+      return null;
+    }
+
     const buf = await res.arrayBuffer();
     // 识别 DDG 默认占位图：确凿无图标，返回 noIcon 由页面写入负缓存（不再请求、不再闪）
-    if (remoteUrl.includes("icons.duckduckgo.com")) {
+    if (isDDG) {
       const hash = await sha256Hex(buf);
       if (hash === DDG_PLACEHOLDER_SHA256) return { noIcon: true };
     }

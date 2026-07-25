@@ -158,24 +158,30 @@ export async function ensureFavicon(
   }
 
   let dataUrl: string | null = null;
-  let definitiveNoIcon = false; // 命中 DDG 占位图等确凿无图标信号
-  let transient = false; // 超时/跨域/瞬断等不确定失败
+  let definitiveNoIcon = false; // 命中 DDG 占位图等确凿无图标信号（DDG 是权威源）
+  let ddgTransient = false; // 仅 DDG 权威源瞬断才不写负缓存
   for (const u of candidateUrls) {
+    const isDDG = u.includes("icons.duckduckgo.com");
     const r = await fetchIconBytes(u);
     if (r === null) {
-      transient = true;
+      // 站点根兜底候选（/favicon.ico）瞬断：只说明该候选不可用，不能推翻 DDG 的「无图标」结论。
+      // 旧逻辑里它会被记进共享的 transient 变量，污染负缓存判定，导致死站每次刷新都重抓。
+      if (isDDG) ddgTransient = true;
       continue;
     }
     if ("noIcon" in r) {
       definitiveNoIcon = true;
-      continue;
+      // DDG 已确凿判定「无图标」：站点根兜底对死站只会空等超时，对活站 DDG 也已查过根路径，
+      // 继续探测毫无意义且会拖慢首屏，直接结束候选链。
+      break;
     }
     dataUrl = r.dataUrl;
     break;
   }
 
-  // 仅当「确有证据无图标」才写负缓存；瞬断等不确定失败不缓存，避免误判为「无图标」。
-  const negative = !dataUrl && definitiveNoIcon && !transient;
+  // 仅当 DDG（权威源）确证无图标、且 DDG 自身未瞬断时才写负缓存；
+  // 站点根兜底的瞬断不再污染判定，避免把「确凿无图标」误判成「瞬断」而每次刷新都重抓。
+  const negative = !dataUrl && definitiveNoIcon && !ddgTransient;
   if (dataUrl !== null || negative) {
     await setCached(domain, variant, dataUrl);
   }

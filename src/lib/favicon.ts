@@ -1,5 +1,6 @@
 import * as React from "react";
 import { domainOf } from "@/lib/utils";
+import { ensureFavicon, getCachedSync } from "@/lib/faviconCache";
 
 const HI_RES_KEY = "hi-res-favicon";
 
@@ -66,25 +67,51 @@ export function requestHiResIcon(url: string): Promise<string | null> {
 }
 
 /**
- * 图标候选 hook：默认返回同步图标服务链；若开启高清解析，
- * 异步向后台拿到 apple-touch-icon 后置顶为首选，实现「服务链 + 高清」两者结合。
+ * 图标候选 hook：优先返回本地缓存的 dataURL（瞬时、无流量、无闪屏）；
+ * 缓存未命中时才回源抓取并入库，仅在确认全部 miss 后保留远程候选链兜底。
+ * 关键点：首帧绝不主动渲染远程地址，否则每次刷新都会抢先发网络请求，
+ * 缓存形同虚设。
  */
 export function useFavicon(url: string): string[] {
   const base = React.useMemo(() => faviconCandidates(url), [url]);
-  const [candidates, setCandidates] = React.useState<string[]>(base);
+  const domain = React.useMemo(() => domainOf(url), [url]);
+  const variant = isHiResEnabled() ? "hd" : "std";
+
+  // 初始只信任「已在内存」的命中；内存未命中则先渲染空（白底占位），
+  // 不急着发远程请求，等异步查到缓存/回源后再决定。
+  const [candidates, setCandidates] = React.useState<string[]>(() => {
+    const cached = getCachedSync(domain, variant);
+    return cached ? [cached] : [];
+  });
 
   React.useEffect(() => {
-    setCandidates(base);
-    if (!isHiResEnabled()) return;
     let active = true;
-    requestHiResIcon(url).then((hi) => {
-      if (active && hi) setCandidates([hi, ...base]);
-    });
+    (async () => {
+      let remoteTry = base;
+      let v = variant;
+      if (isHiResEnabled()) {
+        const hi = await requestHiResIcon(url);
+        if (hi) {
+          remoteTry = [hi, ...base];
+          v = "hd";
+        }
+      }
+      const dataUrl = await ensureFavicon(domain, remoteTry, v);
+      if (!active) return;
+      if (dataUrl) {
+        setCandidates([dataUrl]); // 本地命中/回源成功：仅用本地 dataURL，不发远程请求
+      } else {
+        // DDG 占位图已被 SW 判为「无图标」返回 null，这里不再回退到 DDG（否则又显示箭头），
+        // 仅保留站点根兜底，最终失败由组件 onError 落到字母头像。
+        setCandidates([base[1]]);
+      }
+    })();
+
     return () => {
       active = false;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [url]);
+  }, [url, variant]);
 
   return candidates;
 }

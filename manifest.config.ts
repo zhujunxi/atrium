@@ -29,8 +29,8 @@ export default defineManifest({
     "storage", // 导航数据 chrome.storage.local
     "bookmarks", // 同步 Chrome 收藏夹（打开/刷新新标签时双向对账）
   ],
-  // 默认仅需 Bing（每日壁纸），主机权限极小
-  host_permissions: ["https://www.bing.com/*"],
+  // 默认仅需 Bing（每日壁纸）+ 图标 CDN（本地缓存 favicon 字节需读取其响应）
+  host_permissions: ["https://www.bing.com/*", "https://icons.duckduckgo.com/*"],
   // 高清图标（抓取目标站 HTML 解析 apple-touch-icon）为可选能力，
   // 仅当用户在设置里开启「高清图标」时才动态申请，隐私友好
   optional_host_permissions: ["<all_urls>"],

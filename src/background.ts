@@ -91,6 +91,62 @@ async function resolveHiResIcon(rawUrl: string): Promise<string | null> {
   return iconUrl;
 }
 
+/** ArrayBuffer → Base64（分块避免 apply 参数过多爆栈） */
+function arrayBufferToBase64(buffer: ArrayBuffer): string {
+  let binary = "";
+  const bytes = new Uint8Array(buffer);
+  const chunk = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunk) {
+    binary += String.fromCharCode.apply(
+      null,
+      Array.from(bytes.subarray(i, i + chunk)) as unknown as number[]
+    );
+  }
+  return btoa(binary);
+}
+
+function sha256Hex(buffer: ArrayBuffer): Promise<string> {
+  return crypto.subtle.digest("SHA-256", buffer).then((hash) => {
+    const bytes = new Uint8Array(hash);
+    let s = "";
+    for (let i = 0; i < bytes.length; i++) s += bytes[i].toString(16).padStart(2, "0");
+    return s;
+  });
+}
+
+// DuckDuckGo 对「无 favicon」域名统一返回的固定默认占位图（灰圈+白箭头，1478 字节）。
+// 命中即视为「无图标」：返回 null，由页面回退字母头像，且不被缓存。
+const DDG_PLACEHOLDER_SHA256 =
+  "e5db88ea2322863ca17817b99d60006c625a31cff0dad49cf05d3c6d16a75c17";
+
+/**
+ * 抓取远程图标字节并转 dataURL。需针对目标主机声明 host_permissions：
+ * - icons.duckduckgo.com（默认主机权限）覆盖低清；
+ * - <all_urls>（开启高清图标时）覆盖站点自身图标。
+ * 命中 DDG 默认占位图 / 无权限 / 跨域被拦 / 超时均返回 null，由页面退化为兜底。
+ */
+async function fetchIconBytes(remoteUrl: string): Promise<{ dataUrl: string } | null> {
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 8000);
+    const res = await fetch(remoteUrl, { signal: controller.signal, cache: "force-cache" });
+    clearTimeout(timer);
+    if (!res.ok) return null;
+    const buf = await res.arrayBuffer();
+    // 识别 DDG 默认占位图：视为无图标，不缓存、不走 dataURL
+    if (remoteUrl.includes("icons.duckduckgo.com")) {
+      const hash = await sha256Hex(buf);
+      if (hash === DDG_PLACEHOLDER_SHA256) return null;
+    }
+    const ct = res.headers.get("content-type") || "image/x-icon";
+    // 部分服务返回 text/plain 等非图片 mime，统一回退到图标类型以正确解码
+    const mime = ct.startsWith("image/") ? ct : "image/x-icon";
+    return { dataUrl: `data:${mime};base64,${arrayBufferToBase64(buf)}` };
+  } catch {
+    return null;
+  }
+}
+
 // 点击工具栏图标 → 打开新标签页（即本扩展接管的导航页）
 chrome.action.onClicked.addListener(() => {
   chrome.tabs.create({});
@@ -99,6 +155,10 @@ chrome.action.onClicked.addListener(() => {
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   if (msg?.type === "favicon" && typeof msg.url === "string") {
     resolveHiResIcon(msg.url).then((iconUrl) => sendResponse({ iconUrl }));
+    return true; // 异步响应
+  }
+  if (msg?.type === "fetchIconBytes" && typeof msg.url === "string") {
+    fetchIconBytes(msg.url).then((r) => sendResponse(r));
     return true; // 异步响应
   }
   return false;

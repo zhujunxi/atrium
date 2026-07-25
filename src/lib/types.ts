@@ -59,6 +59,8 @@ export interface WallpaperSettings {
   autoRotate: boolean;
   /** 轮换间隔（分钟） */
   rotateIntervalMin: number;
+  /** 是否在壁纸上叠加压暗蒙版以提升图标 / 文字可读性 */
+  dimMask: boolean;
 }
 
 export interface WallpaperCurrent {

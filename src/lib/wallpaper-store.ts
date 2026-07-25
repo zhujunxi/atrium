@@ -52,6 +52,7 @@ const DEFAULT_SETTINGS: WallpaperSettings = {
   mode: "bing-daily",
   autoRotate: false,
   rotateIntervalMin: 30,
+  dimMask: true,
 };
 
 const DEFAULT_CURRENT: WallpaperCurrent = {

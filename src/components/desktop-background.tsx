@@ -452,9 +452,14 @@ export function DesktopBackground() {
             )}
           />
         )}
-        {/* 可读性遮罩：压暗保证图标 / 文字清晰（深/浅色分别适配），常驻不参与淡入 */}
-        <div className="absolute inset-0 bg-black/25 dark:bg-black/45" />
-        <div className="absolute inset-0 bg-gradient-to-b from-black/10 via-transparent to-black/30" />
+        {/* 可读性遮罩：压暗保证图标 / 文字清晰（深/浅色分别适配），常驻不参与淡入。
+            由设置项「压暗壁纸」控制是否启用。 */}
+        {settings?.dimMask && (
+          <>
+            <div className="absolute inset-0 bg-black/25 dark:bg-black/45" />
+            <div className="absolute inset-0 bg-gradient-to-b from-black/10 via-transparent to-black/30" />
+          </>
+        )}
       </div>
 
       {activeImg && (

@@ -22,6 +22,7 @@ export const en: Dict = {
   "settings.wallpaperShuffleAll": "Shuffle all",
   "settings.autoRotate": "Auto rotate",
   "settings.rotateInterval": "Interval",
+  "settings.dimMask": "Wallpaper overlay",
 
   "language.chinese": "中文",
   "language.english": "English",

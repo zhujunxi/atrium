@@ -41,12 +41,12 @@ export function WallpaperSection() {
 
   if (!settings) return null;
 
-  const toggle =
+  const toggleClass = (on: boolean) =>
     "relative h-5 w-9 rounded-full transition-colors " +
-    (settings.autoRotate ? "bg-[#0A84FF]" : "bg-white/20");
-  const knob =
+    (on ? "bg-[#0A84FF]" : "bg-white/20");
+  const knobClass = (on: boolean) =>
     "absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition-all " +
-    (settings.autoRotate ? "left-[18px]" : "left-0.5");
+    (on ? "left-[18px]" : "left-0.5");
 
   return (
     <>
@@ -82,8 +82,8 @@ export function WallpaperSection() {
         className="mt-1.5 flex w-full items-center gap-2.5 rounded-2xl px-3 py-2.5 text-sm text-white/85 transition-colors hover:bg-white/15 hover:text-white"
       >
         <span className="flex-1 text-left">{t("settings.autoRotate")}</span>
-        <span className={toggle}>
-          <span className={knob} />
+        <span className={toggleClass(settings.autoRotate)}>
+          <span className={knobClass(settings.autoRotate)} />
         </span>
       </button>
 
@@ -112,6 +112,18 @@ export function WallpaperSection() {
           </div>
         </div>
       )}
+
+      <button
+        type="button"
+        onClick={() => update({ dimMask: !settings.dimMask })}
+        className="mt-1.5 flex w-full items-center gap-2.5 rounded-2xl px-3 py-2.5 text-sm text-white/85 transition-colors hover:bg-white/15 hover:text-white"
+      >
+        <span className="flex-1 text-left">{t("settings.dimMask")}</span>
+        <span className={toggleClass(settings.dimMask)}>
+          <span className={knobClass(settings.dimMask)} />
+        </span>
+      </button>
+
     </>
   );
 }

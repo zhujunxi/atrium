@@ -24,6 +24,7 @@ export const KEYS = [
   "settings.wallpaperShuffleAll",
   "settings.autoRotate",
   "settings.rotateInterval",
+  "settings.dimMask",
   // Language switcher
   "language.chinese",
   "language.english",

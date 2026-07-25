@@ -145,7 +145,7 @@ export function SettingsMenu({
           corner={24}
           scale={30}
           blur={12}
-          className="absolute right-0 top-14 z-50 w-60 origin-top-right animate-[fade-up_0.18s_ease-out] rounded-3xl p-3 text-white"
+          className="absolute right-0 top-12 z-50 w-64 origin-top-right animate-[fade-up_0.18s_ease-out] rounded-3xl p-3 text-white"
         >
           <div className="relative z-[3]">
             <p className="px-2 pb-1.5 text-[11px] font-medium uppercase tracking-wide text-white/55">
@@ -175,6 +175,8 @@ export function SettingsMenu({
             </div>
 
             <WallpaperSection />
+
+            <div className="my-2 h-px bg-white/15" />
 
             <p className="px-2 pb-1.5 text-[11px] font-medium uppercase tracking-wide text-white/55">
               {t("settings.language")}
@@ -215,10 +217,10 @@ export function SettingsMenu({
               <Sparkles className="h-4 w-4" />
               <span className="flex-1 text-left">{t("settings.hdIcons")}</span>
               <span
-                className={
-                  "relative h-5 w-9 rounded-full transition-colors " +
-                  (hiRes ? "bg-white/70" : "bg-white/20")
-                }
+              className={
+                "relative h-5 w-9 rounded-full transition-colors " +
+                (hiRes ? "bg-[#0A84FF]" : "bg-white/20")
+              }
               >
                 <span
                   className={

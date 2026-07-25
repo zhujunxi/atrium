@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.0] - 2026-07-25
+
+### Fixed
+
+- Wallpaper favorites: the same Bing image can no longer be saved twice. URLs are now canonicalized (volatile `rf`/`pid`/resolution params ignored) so the heart state stays consistent across daily / collection / shuffle modes.
+- Closed a rapid-click / cross-tab race that could insert duplicate favorites; collection writes are now serialized.
+- Wallpaper no longer flashes when opening a new tab (cached blurred backdrop).
+- Letter avatars no longer reload on every refresh ("no-icon" results are cached).
+
+### Changed
+
+- Polished settings menu layout and the hi-res toggle color.
+- Refined toggle colors and button styling; simplified the "rotate interval" label in EN/ZH.
+
 ## [0.3.0] - 2026-07-24
 
 ### Added

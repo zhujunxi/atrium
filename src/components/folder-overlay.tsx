@@ -217,7 +217,7 @@ export function FolderOverlay({
           blur={12}
           className="liquid-glass-folder relative w-full rounded-[2rem] p-6 shadow-2xl shadow-black/30"
         >
-          <div className="relative z-[3] max-h-[72vh] overflow-y-auto pr-1">
+          <div className="relative z-[3] max-h-[72vh] overflow-y-auto -m-3 p-3">
             <div key={current.id} className="grid grid-cols-4 gap-x-2 gap-y-7 sm:grid-cols-5">
               {current.items.map((it) =>
                 it.type === "link" ? (

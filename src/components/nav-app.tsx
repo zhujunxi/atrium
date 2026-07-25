@@ -1050,7 +1050,7 @@ export function NavApp({ initialData }: { initialData: NavData }) {
 
         {searching && (
           /* 搜索结果：扁平网格，只读 */
-          <div className="mx-auto grid max-w-none grid-cols-4 gap-x-8 gap-y-8 sm:grid-cols-6 lg:grid-cols-6 xl:grid-cols-8 xl:[--lp-icon:72px] 2xl:[--lp-icon:80px] xl:gap-x-14 xl:gap-y-12">
+          <div className="mx-auto grid w-full max-w-none grid-cols-4 gap-x-8 gap-y-8 sm:grid-cols-6 lg:grid-cols-6 lg:max-w-6xl xl:grid-cols-8 xl:[--lp-icon:72px] 2xl:[--lp-icon:80px] xl:gap-x-14 xl:gap-y-12">
             {searchResults.map((l) => (
               <a
                 key={l.id}

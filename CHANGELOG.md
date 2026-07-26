@@ -5,6 +5,28 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.0] - 2026-07-26
+
+### Added
+
+- **Dual-mode toggle (local desktop / Chrome bookmarks sync).** A new switch in Settings lets you choose between a local desktop (independent of Chrome bookmarks) and sync mode, where the grid IS your Chrome bookmarks and every change syncs both ways in real time. Import/export remains local-only.
+- **iPadOS-style entrance animation.** Each new-tab open plays a wallpaper settle + staggered icon-wave entrance. It is blur-safe (only animates `transform`/`opacity` on the compositor, never isolating the backdrop, so the liquid-glass blur stays intact during the animation) and can be turned off via a new **Entrance animation** setting.
+- **Wallpaper overlay toggle.** Settings now expose a "Wallpaper overlay" (dim mask) switch to darken the background for better icon contrast.
+
+### Changed
+
+- Settings panel refactored to share a single `SegmentedControl` component (entries, wallpaper section); cleaner and more consistent UI.
+- App bootstrap rewritten with `async`/`await` for data loading (`main.tsx`), removing promise chains.
+
+### Fixed
+
+- Folder icon no longer clipped at the edges; search grid alignment corrected.
+- Favicon cache now detects DuckDuckGo placeholder images on non-200 responses and caches the negative result, avoiding repeated failed fetches.
+
+### Build
+
+- Release artifact is now versioned: `build:zip` produces `atrium-<version>.zip` (e.g. `atrium-0.5.0.zip`) derived from `package.json`, and the CI workflow attaches `atrium-*.zip` to tag releases. The install steps in the README were simplified (dropped a misleading `dist/` reference and merged "unzip" + "load unpacked" into one step).
+
 ## [0.4.0] - 2026-07-25
 
 ### Fixed

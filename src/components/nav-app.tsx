@@ -1184,8 +1184,12 @@ export function NavApp({
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               onBlur={(e) => {
-                // 失焦到搜索表单之外（点桌面 / 点结果）才清空，表单内切换（选引擎）不清
-                if (!searchFormRef.current?.contains(e.relatedTarget as Node | null)) setQuery("");
+                // 失焦到「搜索表单」或「搜索结果网格」之外（点桌面等）才清空；
+                // 点搜索结果图标时不能清空 query，否则结果网格会在 click 之前卸载，
+                // 导致 <a> 的默认跳转被取消、图标点不开网页。
+                const rt = e.relatedTarget as HTMLElement | null;
+                if (searchFormRef.current?.contains(rt) || rt?.closest("[data-search-results]")) return;
+                setQuery("");
               }}
               placeholder={t("search.placeholder")}
               className="h-9 flex-1 border-transparent bg-transparent text-base text-white shadow-none placeholder:text-white/50 focus-visible:ring-0"
@@ -1202,17 +1206,28 @@ export function NavApp({
 
         {searching && (
           /* 搜索结果：扁平网格，只读 */
-          <div className="mx-auto grid w-full max-w-none grid-cols-4 gap-x-8 gap-y-8 sm:grid-cols-6 lg:grid-cols-6 lg:max-w-6xl xl:grid-cols-8 xl:[--lp-icon:72px] 2xl:[--lp-icon:80px] xl:gap-x-14 xl:gap-y-12">
-            {searchResults.map((l) => (
+          <div
+            key={query}
+            data-search-results
+            className="mx-auto grid w-full max-w-none grid-cols-4 gap-x-8 gap-y-8 sm:grid-cols-6 lg:grid-cols-6 lg:max-w-6xl xl:grid-cols-8 xl:[--lp-icon:72px] 2xl:[--lp-icon:80px] xl:gap-x-14 xl:gap-y-12"
+          >
+            {searchResults.map((l, i) => (
               <a
                 key={l.id}
                 href={l.url}
                 target="_blank"
                 rel="noreferrer"
                 title={l.description || l.url}
+                onClick={() => setQuery("")}
                 className="group flex w-full flex-col items-center gap-3"
               >
-                <span className="relative transition-transform duration-200 group-hover:-translate-y-1">
+                <span
+                  className={cn(
+                    "relative transition-transform duration-200 group-hover:-translate-y-1",
+                    animateIn && "lp-icon-enter"
+                  )}
+                  style={animateIn ? { animationDelay: `${60 + Math.min(i, 40) * 30}ms` } : undefined}
+                >
                   <AppIcon link={l} />
                 </span>
                 <span className="w-full truncate px-0.5 text-center text-xs leading-tight text-white drop-shadow-[0_1px_3px_rgba(0,0,0,0.6)]">

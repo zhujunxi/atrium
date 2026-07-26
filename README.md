@@ -59,10 +59,9 @@ Store builds update automatically — no manual steps.
 
 ### Method 2 · Download a prebuilt package from Release
 
-1. Go to the [Releases page](https://github.com/zhujunxi/atrium/releases) and download the latest `atrium.zip`.
-2. Unzip to get the `dist/` folder.
-3. In Chrome open `chrome://extensions` → enable **Developer mode** (top-right) → **Load unpacked** → select the unzipped `dist/` folder.
-4. Open a new tab (`Cmd/Ctrl + T`) and Atrium appears.
+1. Go to the [Releases page](https://github.com/zhujunxi/atrium/releases) and download the latest asset (named `atrium-<version>.zip`, e.g. `atrium-0.4.0.zip`).
+2. After unzipping, in Chrome open `chrome://extensions` → enable **Developer mode** (top-right) → **Load unpacked** → select the unzipped folder.
+3. Open a new tab (`Cmd/Ctrl + T`) and Atrium appears.
 
 ### Method 3 · Build from source (developers)
 
@@ -87,7 +86,7 @@ npm run dev
 
 ```bash
 npm run build       # production build, output in dist/
-npm run build:zip   # build and package into atrium.zip
+npm run build:zip   # build and package into atrium-<version>.zip
 ```
 
 ## Privacy

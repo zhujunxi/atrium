@@ -59,10 +59,9 @@ Atrium 提供三种安装方式，按需选择。
 
 ### 方式二 · 从 Release 下载预构建包
 
-1. 前往 [Releases 页面](https://github.com/zhujunxi/atrium/releases) 下载最新的 `atrium.zip`。
-2. 解压得到 `dist/` 目录。
-3. 在 Chrome 打开 `chrome://extensions` → 开启右上角「开发者模式」→「加载已解压的扩展程序」→ 选择解压出来的 `dist/` 目录。
-4. 打开一个新标签页（`Cmd/Ctrl + T`）即可看到 Atrium。
+1. 前往 [Releases 页面](https://github.com/zhujunxi/atrium/releases) 下载最新的发布资产（文件名为 `atrium-<版本号>.zip`，例如 `atrium-0.4.0.zip`）。
+2. 解压后，在 Chrome 打开 `chrome://extensions` → 开启右上角「开发者模式」→「加载已解压的扩展程序」→ 选择解压出来的文件夹。
+3. 打开一个新标签页（`Cmd/Ctrl + T`）即可看到 Atrium。
 
 ### 方式三 · 自行构建（开发者）
 
@@ -87,7 +86,7 @@ npm run dev
 
 ```bash
 npm run build       # 生产构建，产物在 dist/
-npm run build:zip   # 构建并打包为 atrium.zip
+npm run build:zip   # 构建并打包为 atrium-<版本号>.zip
 ```
 
 ## 隐私

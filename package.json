@@ -22,7 +22,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
-    "build:zip": "vite build && cd dist && zip -r ../atrium.zip . && cd ..",
+    "build:zip": "vite build && cd dist && zip -r ../atrium-$npm_package_version.zip . && cd ..",
     "preview": "vite preview"
   },
   "dependencies": {

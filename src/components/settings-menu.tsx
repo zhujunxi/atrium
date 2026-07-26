@@ -5,10 +5,11 @@ import { Download, Laptop, Moon, Plus, RefreshCw, Settings, Sparkles, Sun, Uploa
 // RefreshCw 复用为「同步模式」图标
 import { useTheme } from "next-themes";
 import { toast } from "sonner";
+import { cn } from "@/lib/utils";
 import { LiquidGlass } from "@/components/liquid-glass";
 import { SegmentedControl, type SegmentedOption } from "@/components/ui/segmented-control";
 import { WallpaperSection } from "@/components/wallpaper-section";
-import { exportNav, importNav } from "@/lib/store";
+import { exportNav, importNav, readEntrance, writeEntrance } from "@/lib/store";
 import { disableHiRes, enableHiRes, isHiResEnabled } from "@/lib/favicon";
 import { useI18n } from "@/lib/i18n";
 import type { NavData } from "@/lib/types";
@@ -38,6 +39,8 @@ export function SettingsMenu({
   const fileRef = React.useRef<HTMLInputElement | null>(null);
   const [hiRes, setHiRes] = React.useState(true);
   const { t, locale, setLocale } = useI18n();
+  // 同步读取「开启动效」开关（当前页已挂载，仅影响下次打开）
+  const [entrance, setEntrance] = React.useState(() => readEntrance());
 
   React.useEffect(() => {
     setHiRes(isHiResEnabled());
@@ -113,14 +116,19 @@ export function SettingsMenu({
 
   return (
     <div ref={ref} className="fixed right-4 top-4 z-40">
-      {/* 胶囊：一块液态玻璃同时承载「新建」与「设置」 */}
+      {/* 胶囊：一块液态玻璃同时承载「新建」与「设置」；入场淡入挂在玻璃自身（非祖先），
+          否则祖先 opacity 动画会隔离背景、导致毛玻璃模糊在动画期间消失 */}
       <LiquidGlass
         as="div"
         mode="rect"
         corner={18}
         scale={18}
         blur={1.5}
-        className="flex items-center gap-1 rounded-full px-1 py-0.5 transition-transform duration-200 hover:-translate-y-0.5 hover:drop-shadow-[0_10px_20px_rgba(0,0,0,0.35)]"
+        className={cn(
+          "flex items-center gap-1 rounded-full px-1 py-0.5 transition-transform duration-200 hover:-translate-y-0.5 hover:drop-shadow-[0_10px_20px_rgba(0,0,0,0.35)]",
+          entrance && "lp-fade-in"
+        )}
+        style={entrance ? { animationDelay: "200ms" } : undefined}
       >
           <button
             type="button"
@@ -199,14 +207,43 @@ export function SettingsMenu({
                 (hiRes ? "bg-[#0A84FF]" : "bg-white/20")
               }
               >
+              <span
+                className={
+                  "absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition-all " +
+                  (hiRes ? "left-[18px]" : "left-0.5")
+                }
+              />
+              </span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                const next = !entrance;
+                setEntrance(next);
+                writeEntrance(next);
+              }}
+              className="flex w-full items-center gap-2.5 rounded-2xl px-3 py-2.5 text-sm text-white/85 transition-colors hover:bg-white/15 hover:text-white"
+            >
+              <Sparkles className="h-4 w-4" />
+              <span className="flex-1 text-left">{t("settings.entrance")}</span>
+              <span
+                className={
+                  "relative h-5 w-9 rounded-full transition-colors " +
+                  (entrance ? "bg-[#0A84FF]" : "bg-white/20")
+                }
+              >
                 <span
                   className={
                     "absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition-all " +
-                    (hiRes ? "left-[18px]" : "left-0.5")
+                    (entrance ? "left-[18px]" : "left-0.5")
                   }
                 />
               </span>
             </button>
+            <p className="px-3 pb-1 pt-0.5 text-[11px] leading-snug text-white/45">
+              {t("settings.entranceDesc")}
+            </p>
 
             <div className="my-2 h-px bg-white/15" />
 

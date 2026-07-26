@@ -15,7 +15,7 @@ import { AppIcon, FolderIcon } from "@/components/app-icon";
 import { LiquidGlass } from "@/components/liquid-glass";
 import { LinkDialog, type LinkDialogState, type LinkFormValues } from "@/components/dialogs/link-dialog";
 import { useI18n, translate } from "@/lib/i18n";
-import { loadNav, saveMode } from "@/lib/store";
+import { loadNav, saveMode, readEntrance } from "@/lib/store";
 import {
   BOOKMARK_BAR_ID,
   createBmFolder,
@@ -57,6 +57,18 @@ const EDGE_REPEAT_MS = 800;
 
 function newId(prefix: string) {
   return `${prefix}-${Date.now().toString(36)}${Math.floor(Math.random() * 46656).toString(36)}`;
+}
+
+/** 首屏图标入场延迟（毫秒）：行优先波浪，叠加 id 确定性微抖动避免机械感。
+ *  仅在「开启动效」且第 0 页时调用；其余页面返回 undefined（不入场）。 */
+function iconEnterDelay(id: string, index: number, cols: number): number {
+  const row = Math.floor(index / cols);
+  const col = index % cols;
+  let delay = 200 + row * 60 + col * 25;
+  let h = 0;
+  for (const ch of id) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+  delay += (h % 25) / 100 * 60; // 0 ~ 15ms 抖动
+  return Math.round(delay);
 }
 
 /** 与网格断点一致的列数：base 4 / sm 6 / lg 6 / xl 8（每页固定 4 行，见 pages memo） */
@@ -292,6 +304,8 @@ export function NavApp({
   syncModeRef.current = syncMode;
   const { t, locale } = useI18n();
   const [query, setQuery] = React.useState("");
+  // 记住「开启动效」开关：首屏同步读出（不闪）；切换在设置菜单内完成、下次打开生效
+  const [animateIn] = React.useState(() => readEntrance());
   // 记住上次选的搜索引擎：首屏直接从 localStorage 同步读出（不闪）；切换时直接写回
   const [engine, setEngine] = React.useState<(typeof ENGINES)[number]["key"]>(() => {
     if (typeof window === "undefined") return "bing";
@@ -1114,8 +1128,19 @@ export function NavApp({
       >
         {/* Hero */}
         <div className="flex flex-col items-center pb-2 pt-16 text-center">
-          <p className="text-sm text-white/90 drop-shadow">{today}</p>
-          <h1 className="mt-2 text-4xl font-bold tracking-tight text-white drop-shadow-[0_2px_8px_rgba(0,0,0,0.5)] sm:text-5xl">
+          <p
+            className={cn("text-sm text-white/90 drop-shadow", animateIn && "lp-fade-up")}
+            style={animateIn ? { animationDelay: "150ms" } : undefined}
+          >
+            {today}
+          </p>
+          <h1
+            className={cn(
+              "mt-2 text-4xl font-bold tracking-tight text-white drop-shadow-[0_2px_8px_rgba(0,0,0,0.5)] sm:text-5xl",
+              animateIn && "lp-fade-up"
+            )}
+            style={animateIn ? { animationDelay: "250ms" } : undefined}
+          >
             {t(greeting())}
           </h1>
 
@@ -1127,7 +1152,11 @@ export function NavApp({
             corner={24}
             scale={16}
             blur={10}
-            className="mt-8 flex w-full max-w-md items-center gap-2 rounded-full p-1.5"
+            className={cn(
+              "mt-8 flex w-full max-w-md items-center gap-2 rounded-full p-1.5",
+              animateIn && "lp-fade-up"
+            )}
+            style={animateIn ? { animationDelay: "350ms" } : undefined}
           >
             <select
               ref={engineSelectRef}
@@ -1216,7 +1245,7 @@ export function NavApp({
                 className="flex h-full w-full shrink-0 items-center justify-center px-4 sm:px-6 lg:px-8"
               >
                 <div className="mx-auto grid w-full max-w-none grid-cols-4 gap-x-8 gap-y-8 sm:grid-cols-6 lg:grid-cols-6 lg:max-w-6xl xl:grid-cols-8 xl:[--lp-icon:72px] 2xl:[--lp-icon:80px] xl:gap-x-14 xl:gap-y-12">
-                  {pageItems.map((it) => (
+                  {pageItems.map((it, i) => (
                     <LpItem
                       key={it.id}
                       item={it}
@@ -1224,6 +1253,9 @@ export function NavApp({
                       dragging={drag?.id === it.id}
                       mergeTarget={drag?.mergeTargetId === it.id}
                       folderTarget={drag?.folderTargetId === it.id}
+                      enterDelay={
+                        animateIn && pi === 0 ? iconEnterDelay(it.id, i, cols) : undefined
+                      }
                       onPointerDownItem={handlePointerDown}
                       onDelete={handleDeleteItem}
                     />
@@ -1259,7 +1291,13 @@ export function NavApp({
 
         {/* 页码点（Launchpad 底部 dots，点击跳页） */}
         {!searching && pageCount > 1 && (
-          <div className="fixed bottom-6 left-1/2 z-30 flex -translate-x-1/2 items-center gap-1">
+          <div
+            className={cn(
+              "fixed bottom-6 left-1/2 z-30 flex -translate-x-1/2 items-center gap-1",
+              animateIn && "lp-fade-in"
+            )}
+            style={animateIn ? { animationDelay: "620ms" } : undefined}
+          >
             {pages.map((_, i) => (
               <button
                 key={i}

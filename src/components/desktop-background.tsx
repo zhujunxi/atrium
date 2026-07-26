@@ -22,6 +22,7 @@ import {
 } from "@/lib/wallpaper-store";
 import { WallpaperGallery } from "@/components/wallpaper-gallery";
 import type { SavedWallpaper, WallpaperCurrent, WallpaperSettings } from "@/lib/types";
+import { readEntrance } from "@/lib/store";
 
 interface BingImage {
   url: string;
@@ -75,9 +76,15 @@ interface ActiveImage {
   id: string | null;
 }
 
+/** localStorage 读取「开启动效」开关（与 nav:engine 同机制，同步读出、不闪首屏） */
+export function entranceEnabled(): boolean {
+  return readEntrance();
+}
+
 /** 桌面壁纸：必应每日图 + 收藏画廊，支持多模式、收藏、自动轮换与持久化 */
 export function DesktopBackground() {
   const { t, locale } = useI18n();
+  const animateIn = entranceEnabled();
   const [images, setImages] = React.useState<BingImage[]>([]);
   const [collection, setCollection] = React.useState<SavedWallpaper[]>([]);
   const [settings, setSettings] = React.useState<WallpaperSettings | null>(null);
@@ -410,7 +417,7 @@ export function DesktopBackground() {
 
   return (
     <>
-      <div className="fixed inset-0 -z-10 bg-background">
+      <div className={cn("fixed inset-0 -z-10 bg-background", animateIn && "lp-wp-enter")}>
         {/* 刷新首屏兜底：上一张壁纸的模糊缩略图，直接显示（首屏不渐入），图片加载完即被覆盖 */}
         {backdrop && (
           <div

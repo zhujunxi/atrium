@@ -14,6 +14,8 @@ export const KEYS = [
   "settings.syncModeOnDesc",
   "settings.syncModeOffDesc",
   "settings.data",
+  "settings.entrance",
+  "settings.entranceDesc",
   "settings.language",
   "settings.export",
   "settings.import",

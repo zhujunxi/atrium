@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, type CSSProperties } from "react";
 import { cn, gradientFor } from "@/lib/utils";
 import { useFavicon } from "@/lib/favicon";
 import type { NavItem, NavLink } from "@/lib/types";
@@ -16,10 +16,12 @@ export function AppIcon({
   link,
   size = 70,
   className,
+  style,
 }: {
   link: NavLink;
   size?: number;
   className?: string;
+  style?: CSSProperties;
 }) {
   const { candidates, forceLetter } = useFavicon(link.url);
   const [srcIndex, setSrcIndex] = useState(0);
@@ -35,7 +37,7 @@ export function AppIcon({
 
   return (
     <span
-      style={{ width: sizeVar, height: sizeVar }}
+      style={{ width: sizeVar, height: sizeVar, ...style }}
       className={cn(
         "relative block shrink-0 overflow-hidden rounded-[24%]",
         "shadow-[0_1px_2px_rgba(0,0,0,0.12),0_6px_16px_rgba(0,0,0,0.14)] ring-1 ring-black/[0.08] dark:ring-white/10",
@@ -137,12 +139,14 @@ export function FolderIcon({
   items,
   size = 70,
   className,
+  style,
 }: {
   name: string;
   /** 可嵌套：链接与子文件夹混排；预览宫格只取其中的链接 */
   items: NavItem[];
   size?: number;
   className?: string;
+  style?: CSSProperties;
 }) {
   const preview = items
     .filter((i): i is NavLink => i.type === "link")
@@ -160,7 +164,7 @@ export function FolderIcon({
       corner={size * 0.24}
       scale={8}
       blur={3}
-      style={{ width: sizeVar, height: sizeVar, padding: pad }}
+      style={{ width: sizeVar, height: sizeVar, padding: pad, ...style }}
       className={cn(
         "liquid-glass-folder relative block shrink-0 rounded-[24%]",
         className

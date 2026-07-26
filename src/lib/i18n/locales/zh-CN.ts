@@ -13,6 +13,8 @@ export const zhCN: Dict = {
   "settings.syncModeOnDesc": "网格即 Chrome 收藏夹，增删改移实时双向同步",
   "settings.syncModeOffDesc": "本地桌面，与 Chrome 收藏夹互不影响",
   "settings.data": "数据",
+  "settings.entrance": "开启动效",
+  "settings.entranceDesc": "每次打开以 iPadOS 式动画入场（壁纸落幅 + 图标波浪）",
   "settings.language": "语言",
   "settings.export": "导出备份",
   "settings.import": "导入备份",

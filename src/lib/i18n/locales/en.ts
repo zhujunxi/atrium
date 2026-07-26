@@ -13,6 +13,8 @@ export const en: Dict = {
   "settings.syncModeOnDesc": "The grid IS your Chrome bookmarks — every change syncs both ways in real time",
   "settings.syncModeOffDesc": "Local desktop, independent from Chrome bookmarks",
   "settings.data": "Data",
+  "settings.entrance": "Entrance animation",
+  "settings.entranceDesc": "Play an iPadOS-style entrance on every open (wallpaper settle + icon wave)",
   "settings.language": "Language",
   "settings.export": "Export Backup",
   "settings.import": "Import Backup",

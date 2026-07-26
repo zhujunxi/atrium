@@ -3,6 +3,23 @@ import { translate } from "@/lib/i18n";
 
 const STORAGE_KEY = "nav-data";
 const MODE_KEY = "nav-mode";
+const ENTRANCE_KEY = "nav:entrance";
+
+/** 同步读取「开启动效」开关（默认开），与 nav:engine 同机制，避免首屏闪烁 */
+export function readEntrance(): boolean {
+  if (typeof window === "undefined") return true;
+  const v = localStorage.getItem(ENTRANCE_KEY);
+  return v === null ? true : v === "1";
+}
+
+/** 写入「开启动效」开关（"1" / "0"），下次打开页面生效 */
+export function writeEntrance(on: boolean): void {
+  try {
+    localStorage.setItem(ENTRANCE_KEY, on ? "1" : "0");
+  } catch {
+    /* 隐私模式等写入失败时静默，不影响当前页面 */
+  }
+}
 
 /** 读取当前模式（local = 本地桌面 / sync = 网格即 Chrome 收藏夹），缺省 local */
 export async function loadMode(): Promise<NavMode> {

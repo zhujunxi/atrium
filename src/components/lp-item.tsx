@@ -23,6 +23,8 @@ interface LpItemProps {
   mergeTarget?: boolean;
   /** 拖拽悬停放入文件夹预览 */
   folderTarget?: boolean;
+  /** 入场动效延迟（毫秒）；仅在「开启动效」且首屏时由父级计算传入 */
+  enterDelay?: number;
   onPointerDownItem: (e: React.PointerEvent, item: NavItem) => void;
   onDelete: (item: NavItem) => void;
 }
@@ -34,11 +36,16 @@ export const LpItem = React.memo(function LpItem({
   dragging,
   mergeTarget,
   folderTarget,
+  enterDelay,
   onPointerDownItem,
   onDelete,
 }: LpItemProps) {
   const { t } = useI18n();
   const title = item.type === "link" ? item.title : item.name;
+  // 入场动画必须挂在玻璃「自身」（链接图标根 span / 文件夹 LiquidGlass），而不是外层 div：
+  // 若挂在外层（玻璃的祖先），祖先的 transform 会让玻璃身后采不到背景 → 模糊在动画期间消失、结束后才出现。
+  const enterCls = enterDelay !== undefined && !edit ? "lp-icon-enter" : undefined;
+  const enterStyle = enterDelay !== undefined && !edit ? { animationDelay: `${enterDelay}ms` } : undefined;
 
   return (
     <div
@@ -67,16 +74,20 @@ export const LpItem = React.memo(function LpItem({
           <AppIcon
             link={item}
             className={cn(
-              mergeTarget && "ring-4 ring-primary/60"
+              mergeTarget && "ring-4 ring-primary/60",
+              enterCls
             )}
+            style={enterStyle}
           />
         ) : (
           <FolderIcon
             name={item.name}
             items={item.items}
             className={cn(
-              folderTarget && "ring-4 ring-primary/60"
+              folderTarget && "ring-4 ring-primary/60",
+              enterCls
             )}
+            style={enterStyle}
           />
         )}
 

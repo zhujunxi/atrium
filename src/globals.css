@@ -302,3 +302,73 @@
 ::-webkit-scrollbar-track {
   background: transparent;
 }
+
+/* ============================================================
+   入场动效（iPadOS 解锁式）：壁纸落幅 + 图标波浪物化 + 界面元素淡入
+   - 全部仅动 transform / opacity（合成器友好，不触发重排）
+   - 用 animation-fill-mode: backwards：延迟期间保持首帧（隐形），结束后样式自然回落，
+     不压住 hover 上浮 / 编辑 jiggle / 拖拽半透明等后续交互
+   - 统一包裹在 @media (prefers-reduced-motion: no-preference)，
+     系统开启「减弱动效」时全部自动跳过
+   ============================================================ */
+@media (prefers-reduced-motion: no-preference) {
+  /* 壁纸：从轻微放大（1.06）缓速回落到 1.0，制造「沉入」主屏幕的纵深感。
+     只动 transform，不碰 opacity，遵守「首屏直接展示」约束。 */
+  @keyframes wp-settle {
+    from {
+      transform: scale(1.06);
+    }
+    to {
+      transform: scale(1);
+    }
+  }
+  .lp-wp-enter {
+    transform-origin: center;
+    animation: wp-settle 900ms cubic-bezier(0.22, 1, 0.36, 1) backwards;
+  }
+
+  /* 图标：透明度 0 → 1，同时 scale 1.18 → 1 轻微回落（凝聚成型，非弹起）。
+     错峰延迟由行内 animationDelay 控制（首屏行优先波浪）。 */
+  @keyframes lp-icon-in {
+    from {
+      opacity: 0;
+      transform: translateY(10px) scale(1.18);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0) scale(1);
+    }
+  }
+  .lp-icon-enter {
+    animation: lp-icon-in 480ms cubic-bezier(0.32, 0.72, 0, 1) backwards;
+  }
+
+  /* Hero 文本 / 搜索框：上浮淡入（配合包裹层使用，避免直接给液态玻璃本体加动画
+     以防与 SVG 折射滤镜冲突闪烁）。 */
+  @keyframes lp-fade-up {
+    from {
+      opacity: 0;
+      transform: translateY(14px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+  .lp-fade-up {
+    animation: lp-fade-up 520ms cubic-bezier(0.22, 1, 0.36, 1) backwards;
+  }
+
+  /* 界面元素（页码点 / 设置胶囊 / 壁纸控制栏）：纯淡入，最后就位 */
+  @keyframes lp-fade-in {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+  .lp-fade-in {
+    animation: lp-fade-in 360ms ease-out backwards;
+  }
+}

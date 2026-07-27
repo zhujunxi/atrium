@@ -28,7 +28,6 @@ export function DesktopBackground() {
     settings,
     collection,
     current,
-    backdrop,
     liked,
     advance,
     toggleLike,
@@ -115,21 +114,11 @@ export function DesktopBackground() {
 
   return (
     <>
-      <div className={cn("fixed inset-0 -z-10 bg-background", animateIn && "lp-wp-enter")}>
-        {/* 刷新首屏兜底：上一张壁纸的模糊缩略图，直接显示（首屏不渐入），图片加载完即被覆盖 */}
-        {backdrop && (
-          <div
-            aria-hidden
-            className="absolute inset-0"
-            style={{
-              backgroundImage: `url(${backdrop})`,
-              backgroundSize: "cover",
-              backgroundPosition: "center",
-              filter: "blur(20px)",
-              transform: "scale(1.1)",
-            }}
-          />
-        )}
+      {/* 容器刻意不设背景色：底色与刷新兜底图由 boot.js 画在 body/画布层（更底下），
+          若在此加不透明背景，会在 React 挂载后、真图就绪前把画布兜底盖掉造成闪屏 */}
+      <div className={cn("fixed inset-0 -z-10", animateIn && "lp-wp-enter")}>
+        {/* 刷新首屏兜底不在这里：boot.js 已在首帧前把上次壁纸的缩略图画在 body/
+            画布层（本容器之下），真图 decode 完成前它一直可见，dim 遮罩同样罩得住它 */}
         {imgUrl && (
           <img
             src={imgUrl}

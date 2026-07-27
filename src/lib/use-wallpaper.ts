@@ -6,7 +6,6 @@ import {
   canonicalWallpaperId,
   generateThumb,
   loadCollection,
-  loadWallpaperBackdrop,
   loadWallpaperCurrent,
   loadWallpaperSettings,
   removeFromCollection,
@@ -174,7 +173,6 @@ export interface WallpaperApi {
   settings: WallpaperSettings | null;
   collection: SavedWallpaper[];
   current: WallpaperCurrent | null;
-  backdrop: string;
   liked: boolean;
   advance: () => void;
   toggleLike: () => Promise<{ liked: boolean } | null>;
@@ -187,7 +185,6 @@ export function useWallpaper(locale: string): WallpaperApi {
   const [collection, setCollection] = React.useState<SavedWallpaper[]>([]);
   const [settings, setSettings] = React.useState<WallpaperSettings | null>(null);
   const [current, setCurrent] = React.useState<WallpaperCurrent | null>(null);
-  const [backdrop, setBackdrop] = React.useState("");
   const initedRef = React.useRef(false);
 
   // 异步回调中取最新值用（避免闭包吃到过期 state）
@@ -235,11 +232,10 @@ export function useWallpaper(locale: string): WallpaperApi {
     const mkt = mktForLocale(locale);
     const cacheKey = `bing-cache-${locale}`;
     (async () => {
-      const [coll, sett, stored, bg, cacheRes] = await Promise.all([
+      const [coll, sett, stored, cacheRes] = await Promise.all([
         loadCollection(),
         loadWallpaperSettings(),
         loadWallpaperCurrent(),
-        loadWallpaperBackdrop(),
         chrome.storage.local.get(cacheKey),
       ]);
       if (!alive) return;
@@ -248,7 +244,6 @@ export function useWallpaper(locale: string): WallpaperApi {
 
       setCollection(coll);
       setSettings(sett);
-      setBackdrop(bg);
       setPool(cachedPool);
 
       const initial = resolveInitial(sett, coll, cachedPool, stored);
@@ -316,12 +311,19 @@ export function useWallpaper(locale: string): WallpaperApi {
   // - 切到「我的收藏」：当前图不在收藏中时，换成收藏里的对应图 / 第一张；
   // - 切到「每日一图」：当前图不是必应图时，换成今日图；
   // - 切到「随机」：不动，保持当前图，仅影响后续「换一张」的池子。
+  // 例外：程序性回退（收藏被清空时自动切回 bing-daily）不视为用户操作，
+  // 由 suppressModeEffectRef 抑制一次，保证「取消收藏不换当前图」的承诺成立。
   const prevModeRef = React.useRef<WallpaperSettings["mode"] | null>(null);
+  const suppressModeEffectRef = React.useRef(false);
   React.useEffect(() => {
     const mode = settings?.mode;
     if (!mode) return;
     const prev = prevModeRef.current;
     prevModeRef.current = mode;
+    if (suppressModeEffectRef.current) {
+      suppressModeEffectRef.current = false;
+      return;
+    }
     if (!initedRef.current || prev === null || prev === mode) return;
     const cur = curRef.current;
     if (mode === "collection") {
@@ -377,8 +379,10 @@ export function useWallpaper(locale: string): WallpaperApi {
         const next = await removeFromCollection(existing.id);
         setCollection(next);
         // 取消收藏不切换当前展示的图（快照仍可渲染）；
-        // 若收藏被清空且模式为收藏，回退为每日一图，展示图保持不动。
+        // 若收藏被清空且模式为收藏，回退为每日一图，展示图保持不动
+        // （抑制模式切换 effect 的联动换图）。
         if (next.length === 0 && settRef.current?.mode === "collection") {
+          suppressModeEffectRef.current = true;
           const s = await saveWallpaperSettings({ mode: "bing-daily" });
           setSettings(s);
         }
@@ -418,8 +422,10 @@ export function useWallpaper(locale: string): WallpaperApi {
         const sett = settRef.current;
         if (!sett) return;
         if (next.length === 0) {
-          // 收藏清空：模式回退每日一图；当前展示的图不动（快照仍可渲染）
+          // 收藏清空：模式回退每日一图；当前展示的图不动（快照仍可渲染，
+          // 抑制模式切换 effect 的联动换图）
           if (sett.mode === "collection") {
+            suppressModeEffectRef.current = true;
             const s = await saveWallpaperSettings({ mode: "bing-daily" });
             setSettings(s);
           }
@@ -438,7 +444,6 @@ export function useWallpaper(locale: string): WallpaperApi {
     settings,
     collection,
     current,
-    backdrop,
     liked,
     advance,
     toggleLike,

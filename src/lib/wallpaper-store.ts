@@ -198,19 +198,24 @@ export async function saveWallpaperCurrent(c: WallpaperCurrent): Promise<void> {
 // 缓存上一张壁纸的极小缩略图（dataURL），刷新后立即拉伸模糊显示，
 // 避免图片下载期间露出页面底色造成的灰色闪屏。
 
-const BACKDROP_KEY = "wallpaper-backdrop";
-
-export async function loadWallpaperBackdrop(): Promise<string> {
-  const res = await chrome.storage.local.get(BACKDROP_KEY);
-  return (res[BACKDROP_KEY] as string) || "";
-}
+// localStorage 键（同步 API，boot.js 在首帧绘制前读取，实现刷新零白屏；
+// chrome.storage 只有异步 API，注定赶不上首帧，故兜底图直接落 localStorage）
+const BACKDROP_LS_KEY = "wp:backdrop";
+const BACKDROP_SRC_LS_KEY = "wp:backdrop-src"; // 兜底图对应的壁纸 url，用于跳过重复生成
 
 /**
  * 把指定壁纸压缩为 32px 宽的极小缩略图并缓存，用作刷新首屏的模糊兜底。
- * 失败静默忽略（兜底图缺失时上层会回退到纯色底）。
+ * 源 url 未变化时直接跳过（每次开新标签页都会调用，避免重复解码/编码）。
+ * 失败静默忽略（兜底图缺失时 boot.js 会回退到纯色底）。
  */
 export async function saveWallpaperBackdrop(url: string): Promise<void> {
   try {
+    if (
+      localStorage.getItem(BACKDROP_SRC_LS_KEY) === url &&
+      localStorage.getItem(BACKDROP_LS_KEY)
+    ) {
+      return;
+    }
     const res = await fetch(url, { cache: "force-cache" });
     const blob = await res.blob();
     const bmp = await createImageBitmap(blob);
@@ -225,9 +230,10 @@ export async function saveWallpaperBackdrop(url: string): Promise<void> {
     ctx.drawImage(bmp, 0, 0, w, h);
     if (typeof bmp.close === "function") bmp.close();
     const dataUrl = canvas.toDataURL("image/jpeg", 0.5);
-    await chrome.storage.local.set({ [BACKDROP_KEY]: dataUrl });
+    localStorage.setItem(BACKDROP_LS_KEY, dataUrl);
+    localStorage.setItem(BACKDROP_SRC_LS_KEY, url);
   } catch {
-    /* 忽略 */
+    /* 忽略（含 localStorage 配额 / 隐私模式异常）：退回纯色首帧 */
   }
 }
 

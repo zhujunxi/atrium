@@ -3,9 +3,16 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- 告知浏览器支持双主题，暗色系统下首帧默认底色不再是白色 -->
+    <meta name="color-scheme" content="dark light" />
     <title>Atrium</title>
   </head>
   <body>
+    <!-- 防白闪：阻塞脚本，首帧前预置主题类与上次壁纸兜底。
+         必须放在 body 内（脚本要写 document.body），且背景必须设在 body 上——
+         body 背景会被上提到画布层绘制，不会盖住 -z-10 的壁纸层；
+         若设在 html 上会关闭该上提机制，body 的不透明底色将遮住壁纸。 -->
+    <script src="/boot.js"></script>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>

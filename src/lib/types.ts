@@ -61,13 +61,28 @@ export interface WallpaperSettings {
   dimMask: boolean;
 }
 
+/**
+ * 当前壁纸指针（v2，身份快照模型）。
+ *
+ * v1 存的是 `bingIndex` 下标，而必应接口返回的是每日滚动窗口——每天头部插入新图、
+ * 整体后移一位。同一个下标隔天就解析成另一张图，导致「打开新标签页时壁纸乱换」。
+ * v2 直接存「这张图是谁」的完整快照：url / 文案 / 归一化 id。渲染只依赖快照本身，
+ * 不再依赖图池加载与顺序，打开新标签页永远先显示上次那张图。
+ */
 export interface WallpaperCurrent {
-  /** bing-daily / shuffle-all 当前展示的必应图下标 */
-  bingIndex: number;
-  /** collection / shuffle-all 当前展示的收藏 id（可能为 null） */
+  /** 来源池：必应每日图 / 我的收藏 */
+  kind: "bing" | "collection";
+  /** 归一化 id（canonicalWallpaperId），跨语言 / 跨分辨率稳定 */
+  key: string;
+  /** 渲染快照：直接展示该 url，Bing th?id= 链接长期有效 */
+  url: string;
+  title: string;
+  copyright: string;
+  copyrightlink: string;
+  /** kind = collection 时对应的收藏 id */
   collectionId: string | null;
-  /** shuffle-all 模式下，上一张来自哪个池子（用于恢复/轮换去重） */
-  pool: "bing" | "collection";
   /** 上次设置时间（ISO），自动轮换据此判断到期 */
   setAt: string;
+  /** 设置当天的本地日期戳（YYYY-MM-DD），bing-daily 模式跨天更新的依据 */
+  dayStamp: string;
 }

@@ -12,11 +12,13 @@ const CUR_KEY = "wallpaper-current";
 
 /**
  * 把壁纸 URL 归一成稳定标识。
- * 必应每日图的 url 含易变参数（如 &rf=…、&pid=hp）与分辨率后缀（_1920x1080.jpg），
- * 同一张图在不同时刻 / 不同模式下拿到的 url 字符串并不相同。若按整串相等去重，
- * 会出现「同一张图有的有红心、有的没有」以及「同一张图被重复收藏」的问题。
- * 这里只取 th?id= 的稳定主体（OHR.Name_MARKET<ts>），忽略分辨率与杂参数，
- * 让同一张图在任何来源 / 任何模式下都映射到同一个 key。
+ * 必应每日图的 url 含易变参数（如 &rf=…、&pid=hp）、分辨率后缀（_1920x1080.jpg），
+ * 以及**市场码 + 时间戳**（_ZH-CN1234567890）——同一张照片在中英文市场下的 url
+ * 完全不同。若按整串（或含市场码的主体）比对，会出现：
+ * - 同一张图有的有红心、有的没有 / 被重复收藏；
+ * - 切换界面语言后收藏状态、去重全部失配。
+ * 这里只取照片本名（OHR.Name），剥掉市场码、时间戳、分辨率与杂参数，
+ * 让同一张图在任何语言 / 任何来源 / 任何模式下都映射到同一个 key。
  */
 export function canonicalWallpaperId(rawUrl: string): string {
   try {
@@ -25,15 +27,24 @@ export function canonicalWallpaperId(rawUrl: string): string {
     if (host.endsWith("bing.com") || host.endsWith("bing.net")) {
       const id = u.searchParams.get("id");
       if (id) {
-        // OHR.Name_MARKET<ts>_1920x1080.jpg → OHR.Name_MARKET<ts>
+        // OHR.Name_ZH-CN1234567890_1920x1080.jpg → OHR.Name
         const base = id.replace(/_[\dx]+x[\dx]+\.[a-z]+$/i, "");
-        return `bing:${base}`;
+        const m = base.match(/^(OHR\.[^_]+)_/i);
+        return `bing:${m ? m[1] : base}`;
       }
     }
     return `${host}${u.pathname}`;
   } catch {
     return rawUrl; // 非法 URL 兜底：原样返回，不崩溃
   }
+}
+
+/** 本地日期戳（YYYY-MM-DD），bing-daily 跨天更新判定用 */
+export function todayStamp(): string {
+  const d = new Date();
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  return `${d.getFullYear()}-${mm}-${dd}`;
 }
 
 // 串行化收藏的写入，避免并发（快速连点 / 跨标签页）对同一张图产生重复入库：
@@ -55,12 +66,6 @@ const DEFAULT_SETTINGS: WallpaperSettings = {
   dimMask: true,
 };
 
-const DEFAULT_CURRENT: WallpaperCurrent = {
-  bingIndex: 0,
-  collectionId: null,
-  pool: "bing",
-  setAt: new Date().toISOString(),
-};
 
 // --- 收藏列表 -------------------------------------------------------------
 
@@ -154,13 +159,35 @@ export async function saveWallpaperSettings(
 
 // --- 当前壁纸指针 ---------------------------------------------------------
 
-export async function loadWallpaperCurrent(): Promise<WallpaperCurrent> {
+/**
+ * 读取当前壁纸指针（v2 快照）。
+ * 历史 v1 数据（只有 bingIndex 下标、无 url 快照）无法可靠还原成「哪张图」，
+ * 直接视为无指针返回 null，由上层按当前模式重建一次并落盘（一次性迁移）。
+ */
+export async function loadWallpaperCurrent(): Promise<WallpaperCurrent | null> {
   const res = await chrome.storage.local.get(CUR_KEY);
-  const c = res[CUR_KEY];
-  if (c && typeof c === "object" && typeof c.setAt === "string") {
-    return { ...DEFAULT_CURRENT, ...c } as WallpaperCurrent;
+  const c = res[CUR_KEY] as Partial<WallpaperCurrent> | undefined;
+  if (
+    c &&
+    typeof c === "object" &&
+    typeof c.url === "string" &&
+    c.url.length > 0 &&
+    typeof c.key === "string" &&
+    typeof c.setAt === "string"
+  ) {
+    return {
+      kind: c.kind === "collection" ? "collection" : "bing",
+      key: c.key,
+      url: c.url,
+      title: typeof c.title === "string" ? c.title : "",
+      copyright: typeof c.copyright === "string" ? c.copyright : "",
+      copyrightlink: typeof c.copyrightlink === "string" ? c.copyrightlink : "",
+      collectionId: typeof c.collectionId === "string" ? c.collectionId : null,
+      setAt: c.setAt,
+      dayStamp: typeof c.dayStamp === "string" ? c.dayStamp : todayStamp(),
+    };
   }
-  return { ...DEFAULT_CURRENT };
+  return null;
 }
 
 export async function saveWallpaperCurrent(c: WallpaperCurrent): Promise<void> {

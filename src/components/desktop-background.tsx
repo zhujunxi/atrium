@@ -5,140 +5,41 @@ import { Heart, Images, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { useI18n } from "@/lib/i18n";
-import {
-  COLL_KEY,
-  SETT_KEY,
-  addToCollection,
-  canonicalWallpaperId,
-  generateThumb,
-  loadCollection,
-  loadWallpaperBackdrop,
-  loadWallpaperCurrent,
-  loadWallpaperSettings,
-  removeFromCollection,
-  saveWallpaperBackdrop,
-  saveWallpaperCurrent,
-  saveWallpaperSettings,
-} from "@/lib/wallpaper-store";
+import { saveWallpaperBackdrop } from "@/lib/wallpaper-store";
+import { useWallpaper } from "@/lib/use-wallpaper";
 import { WallpaperGallery } from "@/components/wallpaper-gallery";
-import type { SavedWallpaper, WallpaperCurrent, WallpaperSettings } from "@/lib/types";
 import { readEntrance } from "@/lib/store";
-
-interface BingImage {
-  url: string;
-  title: string;
-  copyright: string;
-  copyrightlink: string;
-}
-
-// 扩展页无 CORS 限制（配合 host_permissions），直连 Bing 每日图接口
-// mkt 跟随界面语言：英文界面取 en-US（英文描述），中文界面取 zh-CN（中文描述）
-const BING_BASE = "https://www.bing.com";
-const CACHE_TTL = 30 * 60 * 1000; // 30 分钟
-
-function bingUrl(mkt: string) {
-  return `https://www.bing.com/HPImageArchive.aspx?format=js&idx=0&n=8&mkt=${mkt}`;
-}
-
-function mktForLocale(locale: string): string {
-  return locale === "zh-CN" ? "zh-CN" : "en-US";
-}
-
-async function fetchBing(mkt: string): Promise<BingImage[]> {
-  const res = await fetch(bingUrl(mkt), { cache: "no-store" });
-  const data = (await res.json()) as {
-    images?: { url?: string; title?: string; copyright?: string; copyrightlink?: string }[];
-  };
-  return (data.images || [])
-    .filter((img) => img.url)
-    .map((img) => ({
-      url: img.url!.startsWith("http") ? img.url! : BING_BASE + img.url,
-      title: img.title ?? "",
-      copyright: img.copyright ?? "",
-      copyrightlink: img.copyrightlink ?? "",
-    }));
-}
-
-/** 从池子里随机挑一个与 cur 不同的元素（池子 ≤1 时原样返回） */
-function pickDifferent<T>(arr: T[], same: (a: T, b: T) => boolean, cur: T): T {
-  if (arr.length <= 1) return arr[0];
-  let pick = cur;
-  while (same(pick, cur)) pick = arr[Math.floor(Math.random() * arr.length)];
-  return pick;
-}
-
-interface ActiveImage {
-  url: string;
-  title: string;
-  copyright: string;
-  copyrightlink: string;
-  fromCollection: boolean;
-  id: string | null;
-}
 
 /** localStorage 读取「开启动效」开关（与 nav:engine 同机制，同步读出、不闪首屏） */
 export function entranceEnabled(): boolean {
   return readEntrance();
 }
 
-/** 桌面壁纸：必应每日图 + 收藏画廊，支持多模式、收藏、自动轮换与持久化 */
+/**
+ * 桌面壁纸（纯渲染层）。
+ * 产品逻辑（图池获取、指针决策、轮换、收藏）全部在 useWallpaper 中：
+ * 打开新标签页永远先显示上次那张图，只有「跨天每日更新 / 手动换一张 /
+ * 画廊选择 / 轮换到期」这些可预期时刻才切换。
+ */
 export function DesktopBackground() {
   const { t, locale } = useI18n();
   const animateIn = entranceEnabled();
-  const [images, setImages] = React.useState<BingImage[]>([]);
-  const [collection, setCollection] = React.useState<SavedWallpaper[]>([]);
-  const [settings, setSettings] = React.useState<WallpaperSettings | null>(null);
-  const [current, setCurrent] = React.useState<WallpaperCurrent | null>(null);
+  const {
+    settings,
+    collection,
+    current,
+    backdrop,
+    liked,
+    advance,
+    toggleLike,
+    selectFromGallery,
+    removeFromGallery,
+  } = useWallpaper(locale);
+
   const [imgUrl, setImgUrl] = React.useState(""); // 当前已显示的图（始终为已加载）
   const [next, setNext] = React.useState<{ url: string; ready: boolean } | null>(null); // 待交叉淡入的新图
-  const [backdrop, setBackdrop] = React.useState(""); // 上一张壁纸的极小缩略图 dataURL，刷新首屏模糊兜底用
   const [galleryOpen, setGalleryOpen] = React.useState(false);
   const barRef = React.useRef<HTMLDivElement | null>(null);
-
-  // 初始化：拉取必应图、读取收藏 / 设置 / 当前指针
-  React.useEffect(() => {
-    let active = true;
-    const mkt = mktForLocale(locale);
-    const cacheKey = `bing-cache-${locale}`;
-    (async () => {
-      try {
-        const cached = await chrome.storage.local.get(cacheKey);
-        const entry = cached[cacheKey] as { at: number; images: BingImage[] } | undefined;
-        if (entry?.images?.length && active) setImages(entry.images);
-        if (!entry || Date.now() - entry.at > CACHE_TTL) {
-          const imgs = await fetchBing(mkt);
-          if (imgs.length) {
-            await chrome.storage.local.set({ [cacheKey]: { at: Date.now(), images: imgs } });
-            if (active) setImages(imgs);
-          }
-        }
-      } catch {
-        /* 网络异常时保留已有缓存 / 空背景 */
-      }
-    })();
-    return () => {
-      active = false;
-    };
-  }, [locale]);
-
-  React.useEffect(() => {
-    let alive = true;
-    Promise.all([
-      loadCollection(),
-      loadWallpaperSettings(),
-      loadWallpaperCurrent(),
-      loadWallpaperBackdrop(),
-    ]).then(([coll, sett, cur, bg]) => {
-      if (!alive) return;
-      setCollection(coll);
-      setSettings(sett);
-      setCurrent(cur);
-      setBackdrop(bg);
-    });
-    return () => {
-      alive = false;
-    };
-  }, []);
 
   // 画廊打开时，点击容器外区域关闭（容器含底栏与画廊本身，故点击切换按钮不会误关）
   React.useEffect(() => {
@@ -150,83 +51,22 @@ export function DesktopBackground() {
     return () => window.removeEventListener("pointerdown", onDown);
   }, [galleryOpen]);
 
-  // 多标签页 / 设置面板改动后，实时同步收藏与设置
-  React.useEffect(() => {
-    const onChange = (
-      changes: Record<string, chrome.storage.StorageChange>,
-      area: string
-    ) => {
-      if (area !== "local") return;
-      if (changes[COLL_KEY]) {
-        const v = changes[COLL_KEY].newValue;
-        if (Array.isArray(v)) setCollection(v as SavedWallpaper[]);
-      }
-      if (changes[SETT_KEY]) {
-        const v = changes[SETT_KEY].newValue;
-        if (v && typeof v === "object") {
-          setSettings((prev) => ({ ...(prev ?? ({} as WallpaperSettings)), ...(v as WallpaperSettings) }));
-        }
-      }
-    };
-    chrome.storage.onChanged.addListener(onChange);
-    return () => chrome.storage.onChanged.removeListener(onChange);
-  }, []);
-
-  // 当前应展示的壁纸（按模式推导）
-  const activeImg = React.useMemo<ActiveImage | null>(() => {
-    if (!settings || !current) return null;
-    if (settings.mode === "collection") {
-      const wp = collection.find((w) => w.id === current.collectionId) ?? collection[0];
-      if (wp)
-        return {
-          url: wp.url,
-          title: wp.title,
-          copyright: wp.copyright,
-          copyrightlink: wp.copyrightlink,
-          fromCollection: true,
-          id: wp.id,
-        };
-    } else if (settings.mode === "shuffle-all" && current.pool === "collection") {
-      const wp = collection.find((w) => w.id === current.collectionId);
-      if (wp)
-        return {
-          url: wp.url,
-          title: wp.title,
-          copyright: wp.copyright,
-          copyrightlink: wp.copyrightlink,
-          fromCollection: true,
-          id: wp.id,
-        };
-    }
-    // 必应池（collection 模式但收藏为空 / 未命中时回退此处）
-    const img = images[current.bingIndex] ?? images[0];
-    if (!img) return null;
-    return {
-      url: img.url,
-      title: img.title,
-      copyright: img.copyright,
-      copyrightlink: img.copyrightlink,
-      fromCollection: false,
-      id: null,
-    };
-  }, [settings, current, collection, images]);
-
   // 目标图变化且不同于当前显示图时：先预加载并解码新图，像素完全就绪后再呈现。
   // - 首次加载（imgUrl 为空，无旧图兜底）：直接展示，不做渐入——避免灰底停留 + 渐入被
-  //   跳过造成的闪屏（用户明确要求首屏直接展示）。
+  //   跳过造成的闪屏（首屏直接展示）。
   // - 切换（imgUrl 非空，有旧图兜底）：走交叉淡入层，700ms 平滑过渡。
   React.useEffect(() => {
-    if (!activeImg?.url || activeImg.url === imgUrl) return;
+    if (!current?.url || current.url === imgUrl) return;
     let cancelled = false;
     const pre = new Image();
-    pre.src = activeImg.url;
+    pre.src = current.url;
     const show = () => {
       if (cancelled) return;
       if (!imgUrl) {
-        setImgUrl(activeImg.url);
-        void saveWallpaperBackdrop(activeImg.url);
+        setImgUrl(current.url);
+        void saveWallpaperBackdrop(current.url);
       } else {
-        setNext({ url: activeImg.url, ready: false });
+        setNext({ url: current.url, ready: false });
       }
     };
     if (typeof pre.decode === "function") {
@@ -240,7 +80,7 @@ export function DesktopBackground() {
     return () => {
       cancelled = true;
     };
-  }, [activeImg?.url, imgUrl]);
+  }, [current?.url, imgUrl]);
 
   // 淡入层挂载后，确保 opacity-0 帧已被浏览器绘制（双 rAF），再置 ready 触发 700ms 过渡。
   // 这一帧之差决定了过渡是「生效」还是「被 React 批处理跳过、图片啪地出现」。
@@ -258,158 +98,16 @@ export function DesktopBackground() {
     };
   }, [next?.url, next?.ready]);
 
-  // 换一张：按模式在对应池子里随机选一张不同的
-  const advance = React.useCallback(() => {
-    if (!settings || !current) return;
-    const nowIso = new Date().toISOString();
-    const setCur = (next: WallpaperCurrent) => {
-      setCurrent(next);
-      void saveWallpaperCurrent(next);
-    };
-    if (settings.mode === "collection") {
-      if (collection.length <= 1) return;
-      const cur = collection.find((w) => w.id === current.collectionId) ?? collection[0];
-      const pick = pickDifferent(collection, (a, b) => a.id === b.id, cur);
-      setCur({ ...current, collectionId: pick.id, pool: "collection", setAt: nowIso });
-      return;
-    }
-    if (settings.mode === "shuffle-all") {
-      // 同一张图可能同时出现在必应池与收藏池（url 串不同但归一 id 相同），
-      // 按归一 id 去重，避免同一张图在随机流里出现两次、红心状态还不一致。
-      const collIds = new Set(collection.map((w) => canonicalWallpaperId(w.url)));
-      const pool = [
-        ...images
-          .map((img, i) => ({
-            type: "bing" as const,
-            i,
-            url: img.url,
-            key: `b${i}`,
-            cid: canonicalWallpaperId(img.url),
-          }))
-          .filter((b) => !collIds.has(b.cid)),
-        ...collection.map((w) => ({
-          type: "collection" as const,
-          id: w.id,
-          url: w.url,
-          key: `c${w.id}`,
-          cid: canonicalWallpaperId(w.url),
-        })),
-      ];
-      if (pool.length <= 1) return;
-      const curDesc =
-        current.pool === "collection" && current.collectionId
-          ? pool.find((p) => p.type === "collection" && p.id === current.collectionId)
-          : pool.find((p) => p.type === "bing" && p.i === current.bingIndex);
-      const pick = pickDifferent(pool, (a, b) => a.cid === b.cid, curDesc ?? pool[0]);
-      if (pick.type === "bing")
-        setCur({ ...current, bingIndex: pick.i, pool: "bing", setAt: nowIso });
-      else setCur({ ...current, collectionId: pick.id, pool: "collection", setAt: nowIso });
-      return;
-    }
-    // bing-daily
-    if (images.length <= 1) return;
-    let n = current.bingIndex;
-    while (n === current.bingIndex) n = Math.floor(Math.random() * images.length);
-    setCur({ ...current, bingIndex: n, pool: "bing", setAt: nowIso });
-  }, [settings, current, collection, images]);
-
-  // 自动轮换：setAt 到期即切下一张；设置/时间变化都会重置计时
-  React.useEffect(() => {
-    if (!settings?.autoRotate || !current) return;
-    const intervalMs = Math.max(1, settings.rotateIntervalMin) * 60 * 1000;
-    const elapsed = Date.now() - new Date(current.setAt).getTime();
-    const delay = Math.max(0, intervalMs - elapsed);
-    const id = window.setTimeout(() => advance(), delay);
-    return () => window.clearTimeout(id);
-  }, [settings?.autoRotate, settings?.rotateIntervalMin, current?.setAt, advance]);
-
-  // 用归一化 id 判定「是否已收藏」：同一张必应图在不同模式下 url 串可能不同（rf/pid/分辨率），
-  // 直接比对整串会导致同一张图有的有红心、有的没有，还能被重复点红心。
-  const liked =
-    !!activeImg &&
-    collection.some((w) => canonicalWallpaperId(w.url) === canonicalWallpaperId(activeImg.url));
-
-  // 防止快速连点 / 并发：上一回合未结束时忽略新点击，避免重复入库。
-  const likePendingRef = React.useRef(false);
-  async function toggleLike() {
-    if (!activeImg || likePendingRef.current) return;
-    likePendingRef.current = true;
-    try {
-      const cid = canonicalWallpaperId(activeImg.url);
-      const existing = collection.find((w) => canonicalWallpaperId(w.url) === cid);
-      if (existing) {
-        const next = await removeFromCollection(existing.id);
-        handleRemoved(existing.id, next);
-        toast.success(t("toast.wallpaperRemoved"));
-      } else {
-        const thumb = await generateThumb(activeImg.url);
-        const next = await addToCollection({
-          url: activeImg.url,
-          title: activeImg.title,
-          copyright: activeImg.copyright,
-          copyrightlink: activeImg.copyrightlink,
-          thumb,
-          source: activeImg.fromCollection ? "custom" : "bing",
-        });
-        setCollection(next);
-        toast.success(t("toast.wallpaperAdded"));
-      }
-    } finally {
-      likePendingRef.current = false;
-    }
+  async function onToggleLike() {
+    const res = await toggleLike();
+    if (!res) return;
+    toast.success(res.liked ? t("toast.wallpaperAdded") : t("toast.wallpaperRemoved"));
   }
 
-  function selectFromGallery(id: string) {
-    if (!current) return;
-    const next: WallpaperCurrent = {
-      ...current,
-      collectionId: id,
-      pool: "collection",
-      setAt: new Date().toISOString(),
-    };
-    setCurrent(next);
-    void saveWallpaperCurrent(next);
-    void saveWallpaperSettings({ mode: "collection" }).then(setSettings);
+  function onSelectFromGallery(id: string) {
+    selectFromGallery(id);
     setGalleryOpen(false);
     toast.success(t("toast.wallpaperSet"));
-  }
-
-  /** 删除收藏后的收尾：若删的是当前展示图则平滑切到下一张；若清空则回退每日推荐 */
-  function handleRemoved(removedId: string, nextColl: SavedWallpaper[]) {
-    setCollection(nextColl);
-    if (!current || !settings) return;
-    const wasCurrent =
-      current.collectionId === removedId &&
-      (settings.mode === "collection" ||
-        (settings.mode === "shuffle-all" && current.pool === "collection"));
-    if (nextColl.length === 0) {
-      const s: WallpaperSettings = { ...settings, mode: "bing-daily" };
-      setSettings(s);
-      void saveWallpaperSettings(s);
-      const c: WallpaperCurrent = {
-        ...current,
-        collectionId: null,
-        pool: "bing",
-        setAt: new Date().toISOString(),
-      };
-      setCurrent(c);
-      void saveWallpaperCurrent(c);
-      return;
-    }
-    if (wasCurrent) {
-      const c: WallpaperCurrent = {
-        ...current,
-        collectionId: nextColl[0].id,
-        pool: "collection",
-        setAt: new Date().toISOString(),
-      };
-      setCurrent(c);
-      void saveWallpaperCurrent(c);
-    }
-  }
-
-  function removeFromGallery(id: string) {
-    void removeFromCollection(id).then((next) => handleRemoved(id, next));
   }
 
   const btn =
@@ -469,18 +167,18 @@ export function DesktopBackground() {
         )}
       </div>
 
-      {activeImg && (
+      {current && (
         <div ref={barRef} className="contents">
           <div className="group fixed bottom-2 right-3 z-30 flex items-center">
             {/* 悬停时向左展开版权文字，默认只显示圆形按钮 */}
             <span className="pointer-events-none mr-0 max-w-0 overflow-hidden whitespace-nowrap text-[11px] text-white/80 opacity-0 transition-all duration-300 group-hover:mr-2 group-hover:max-w-[60vw] group-hover:opacity-100">
-              {activeImg.copyright || activeImg.title}
+              {current.copyright || current.title}
             </span>
 
             {/* 收藏：已收藏显示实心红心 */}
             <button
               type="button"
-              onClick={toggleLike}
+              onClick={onToggleLike}
               title={liked ? t("a11y.unlikeWallpaper") : t("a11y.likeWallpaper")}
               aria-label={liked ? t("a11y.unlikeWallpaper") : t("a11y.likeWallpaper")}
               aria-pressed={liked}
@@ -521,9 +219,9 @@ export function DesktopBackground() {
           {galleryOpen && (
             <WallpaperGallery
               items={collection}
-              currentId={activeImg?.fromCollection ? activeImg.id : null}
+              currentId={current.kind === "collection" ? current.collectionId : null}
               onClose={() => setGalleryOpen(false)}
-              onSelect={selectFromGallery}
+              onSelect={onSelectFromGallery}
               onRemove={removeFromGallery}
             />
           )}

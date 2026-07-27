@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.0] - 2026-07-27
+
+### Added
+
+- Search result icons now play the same staggered entrance animation as the launchpad grid (replayed per query, gated by the Entrance-animation setting and `prefers-reduced-motion`).
+
+### Changed
+
+- Wallpaper engine rebuilt on an **identity-snapshot model** (`WallpaperCurrent` v2 holds `kind/key/url/copy/dayStamp`). Rendering now depends only on the snapshot, never on Bing's rolling daily pool order — so the wallpaper no longer visibly swaps when you open a new tab, after the daily rollover / 30-minute cache refresh, or when you switch the UI language. `canonicalWallpaperId` strips the market code + timestamp so the same photo matches across locales and resolutions. A new `useWallpaper()` controller hook owns pool fetching, first-paint pointer resolution, and advance/like/gallery/mode-switch logic; `desktop-background.tsx` is now a pure rendering layer. Legacy v1 pointers are discarded and rebuilt once on upgrade.
+
+### Fixed
+
+- **First-paint white flash fully eliminated.** A blocking `boot.js` (allowed under MV3's CSP) now runs before first paint to set the `.dark` class and paint the last wallpaper's cached blurred thumbnail as the body background, and the first frame uses the wallpaper's **average color** as its base instead of a near-white theme color — removing the residual lower-half white flash on refresh. This also fixes the dark-mode first frame, where `next-themes`' anti-flash inline script was previously blocked by MV3 CSP.
+- Search result icons now actually open the page when clicked: moving focus into the results grid no longer clears the query (and unmounts the grid) before the click fires; the query now clears on result click instead.
+
 ## [0.5.0] - 2026-07-26
 
 ### Added

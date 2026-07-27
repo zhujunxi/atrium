@@ -27,8 +27,9 @@ import type {
  *    不依赖必应图池的加载结果与顺序）；
  * 2. 跨天且处于「每日一图」模式：换成当日新图，一天最多一次；
  * 3. 用户点「换一张」或在画廊中选择；
- * 4. 自动轮换到期：若在打开瞬间就已到期，首屏直接以新图呈现（打开前决策，
- *    不做「旧图→新图」的可见闪切）；页面开着时到期则正常交叉淡入。
+ * 4. 自动轮换：仅按「页面可见时长」推进，后台逗留不计入；切回标签页不会因后台流逝的
+ *    时间而在回来瞬间换图，用户每次切回来看到的就是离开时的那张；页面开着、可见且
+ *    累计可见时长到期时正常交叉淡入。
  * 切换界面语言只影响后续新图的来源与文案，不改变当前展示的图。
  */
 
@@ -132,17 +133,11 @@ function pickNext(
   return pick.snap();
 }
 
-/** 自动轮换是否已到期 */
-function rotationExpired(sett: WallpaperSettings, cur: WallpaperCurrent): boolean {
-  if (!sett.autoRotate) return false;
-  const intervalMs = Math.max(1, sett.rotateIntervalMin) * 60 * 1000;
-  return Date.now() - new Date(cur.setAt).getTime() >= intervalMs;
-}
-
 /**
  * 首屏指针决策（在任何图片呈现之前执行一次）：
- * - 有快照：优先原样沿用；仅当「轮换已到期」或「每日一图跨天」时换成新图——
- *   由于发生在首屏之前，用户看到的直接就是新图，没有旧图→新图的闪切。
+ * - 有快照：原样沿用，绝不在「打开/重载」时因轮换间隔已到而换图（否则被 Chrome 丢弃后台
+ *   标签页后重载，会因 stored.setAt 过旧而每次回来都换一张，体验极差）。轮换只在页面持续
+ *   打开、用户正在观看时由页内计时器推进。仅「每日一图跨天」这类每日一次的预期变化会换图。
  * - 无快照（首次使用 / v1 迁移）：按模式取默认第一张。
  */
 function resolveInitial(
@@ -152,10 +147,9 @@ function resolveInitial(
   stored: WallpaperCurrent | null
 ): WallpaperCurrent | null {
   if (stored) {
-    if (rotationExpired(sett, stored)) {
-      const next = pickNext(sett.mode, pool, collection, stored.key);
-      if (next) return next;
-    }
+    // 打开/重载时不因「轮换间隔已到」换图：轮换计时不再依赖 stored.setAt（旧时间戳曾在
+    // 回来瞬间误触发轮换），改由底部 rotation effect 按「页面可见时长」累计推进，从首屏图
+    // 呈现、用户开始观看时起算。
     if (sett.mode === "bing-daily" && stored.dayStamp !== todayStamp() && pool[0]) {
       const cid = canonicalWallpaperId(pool[0].url);
       if (cid !== stored.key) return snapFromBing(pool[0]);
@@ -186,6 +180,17 @@ export function useWallpaper(locale: string): WallpaperApi {
   const [settings, setSettings] = React.useState<WallpaperSettings | null>(null);
   const [current, setCurrent] = React.useState<WallpaperCurrent | null>(null);
   const initedRef = React.useRef(false);
+
+  // 页面可见性：切到后台（或被 Chrome 内存节省丢弃重载）时置 false。
+  // 自动轮换只在可见时计时，后台逗留不计入轮换时长，回来看到的就是离开时的那张。
+  const [visible, setVisible] = React.useState(
+    typeof document === "undefined" ? true : document.visibilityState !== "hidden"
+  );
+  React.useEffect(() => {
+    const onVis = () => setVisible(document.visibilityState !== "hidden");
+    document.addEventListener("visibilitychange", onVis);
+    return () => document.removeEventListener("visibilitychange", onVis);
+  }, []);
 
   // 异步回调中取最新值用（避免闭包吃到过期 state）
   const poolRef = React.useRef(pool);
@@ -248,6 +253,8 @@ export function useWallpaper(locale: string): WallpaperApi {
 
       const initial = resolveInitial(sett, coll, cachedPool, stored);
       if (initial) {
+        // 直接沿用首屏决策结果；轮换计时不再依赖 stored.setAt（旧时间戳曾在回来瞬间误触发
+        // 轮换），改由底部 rotation effect 按「页面可见时长」累计推进。
         setCurrent(initial);
         if (initial !== stored) void saveWallpaperCurrent(initial);
       }
@@ -350,16 +357,30 @@ export function useWallpaper(locale: string): WallpaperApi {
     if (next) commit(next);
   }, [commit]);
 
-  // 自动轮换：页面开着时到期换下一张（交叉淡入）。
-  // 打开时已到期的情况在初始化阶段处理（首屏直接是新图），此处只管在场计时。
+  // 自动轮换：只按「页面可见时长」推进，后台逗留不计入。
+  // rotateAccumRef 累计本轮已可见的毫秒数；rotateStartRef 记录本轮可见计时的墙钟起点。
+  // 切到后台时把已可见片段并入 accum 并暂停；切回时从「剩余时长」继续，绝不因后台流逝的
+  // 时间在回来的瞬间立即换图。每次真正轮换后置零，重新计满整段间隔。
+  const rotateAccumRef = React.useRef(0);
+  const rotateStartRef = React.useRef<number | null>(null);
   React.useEffect(() => {
-    if (!settings?.autoRotate || !current) return;
+    if (!settings?.autoRotate || !current || !visible) return;
     const intervalMs = Math.max(1, settings.rotateIntervalMin) * 60 * 1000;
-    const elapsed = Date.now() - new Date(current.setAt).getTime();
-    const delay = Math.max(0, intervalMs - elapsed);
-    const id = window.setTimeout(() => advance(), delay);
-    return () => window.clearTimeout(id);
-  }, [settings?.autoRotate, settings?.rotateIntervalMin, current?.setAt, advance, current]);
+    if (rotateStartRef.current == null) rotateStartRef.current = Date.now();
+    const remaining = Math.max(0, intervalMs - rotateAccumRef.current);
+    const id = window.setTimeout(() => {
+      rotateAccumRef.current = 0;
+      rotateStartRef.current = null;
+      advance();
+    }, remaining);
+    return () => {
+      window.clearTimeout(id);
+      if (rotateStartRef.current != null) {
+        rotateAccumRef.current += Date.now() - rotateStartRef.current;
+        rotateStartRef.current = null;
+      }
+    };
+  }, [settings?.autoRotate, settings?.rotateIntervalMin, visible, advance, current]);
 
   // 已收藏判定：按归一化 id 比对（跨语言 / 跨分辨率一致）
   const liked =

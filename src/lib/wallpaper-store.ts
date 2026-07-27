@@ -202,6 +202,7 @@ export async function saveWallpaperCurrent(c: WallpaperCurrent): Promise<void> {
 // chrome.storage 只有异步 API，注定赶不上首帧，故兜底图直接落 localStorage）
 const BACKDROP_LS_KEY = "wp:backdrop";
 const BACKDROP_SRC_LS_KEY = "wp:backdrop-src"; // 兜底图对应的壁纸 url，用于跳过重复生成
+const BACKDROP_COLOR_LS_KEY = "wp:backdrop-color"; // 兜底图平均色，作首帧底色，避免近白底闪一下
 
 /**
  * 把指定壁纸压缩为 32px 宽的极小缩略图并缓存，用作刷新首屏的模糊兜底。
@@ -212,7 +213,10 @@ export async function saveWallpaperBackdrop(url: string): Promise<void> {
   try {
     if (
       localStorage.getItem(BACKDROP_SRC_LS_KEY) === url &&
-      localStorage.getItem(BACKDROP_LS_KEY)
+      localStorage.getItem(BACKDROP_LS_KEY) &&
+      // 平均色缺失时也重新生成，避免老用户已有 wp:backdrop 但无 wp:backdrop-color
+      // 时守卫提前返回、颜色永远写不上、首帧继续闪白。
+      localStorage.getItem(BACKDROP_COLOR_LS_KEY)
     ) {
       return;
     }
@@ -228,6 +232,24 @@ export async function saveWallpaperBackdrop(url: string): Promise<void> {
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
     ctx.drawImage(bmp, 0, 0, w, h);
+    // 采样缩略图平均色：作为下次刷新首帧的兜底底色。否则浅色主题下
+    // background-color(#F9FAFC 近白) 会在模糊图解码前抢先画一帧 → 白闪。
+    try {
+      const px = ctx.getImageData(0, 0, w, h).data;
+      let r = 0, g = 0, b = 0, n = 0;
+      for (let i = 0; i < px.length; i += 4) {
+        r += px[i];
+        g += px[i + 1];
+        b += px[i + 2];
+        n++;
+      }
+      localStorage.setItem(
+        BACKDROP_COLOR_LS_KEY,
+        `${Math.round(r / n)},${Math.round(g / n)},${Math.round(b / n)}`
+      );
+    } catch {
+      /* 采样失败不影响兜底图本身 */
+    }
     if (typeof bmp.close === "function") bmp.close();
     const dataUrl = canvas.toDataURL("image/jpeg", 0.5);
     localStorage.setItem(BACKDROP_LS_KEY, dataUrl);

@@ -23,7 +23,15 @@
         window.matchMedia("(prefers-color-scheme: dark)").matches);
     if (dark) document.documentElement.classList.add("dark");
     // 与 globals.css 的 --background 对应：dark = hsl(224 40% 6%)，light = hsl(220 33% 98%)
-    var base = dark ? "#090B15" : "#F9FAFC";
+    var themeBase = dark ? "#090B15" : "#F9FAFC";
+    // 优先用壁纸平均色作首帧底色：避免浅色主题下 #F9FAFC 在模糊图解码前抢先画一帧白。
+    // 该色由 saveWallpaperBackdrop 在生成兜底图时一并采样写入。
+    var color = localStorage.getItem("wp:backdrop-color");
+    // 仅接受 "r,g,b" 格式，避免脏值让整条 background 简写失效（退化成无图白底）。
+    var base =
+      /^\d{1,3},\d{1,3},\d{1,3}$/.test(color || "")
+        ? "rgb(" + color + ")"
+        : themeBase;
     var bg = localStorage.getItem("wp:backdrop") || "";
     document.body.style.background = bg
       ? base + ' url("' + bg + '") center / cover no-repeat'

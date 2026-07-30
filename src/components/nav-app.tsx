@@ -349,6 +349,8 @@ export function NavApp({
     lp: boolean;
     dragging: boolean;
     timer: number | null;
+    /** 中键(1)按下：抬手时直接新开标签页，不经长按/拖拽 */
+    middle?: boolean;
   } | null>(null);
   const hoverRef = React.useRef<{ id: string | null; since: number }>({ id: null, since: 0 });
   const saveTimer = React.useRef<number | null>(null);
@@ -469,7 +471,14 @@ export function NavApp({
 
   // useCallback 固定引用：配合 LpItem 的 memo，翻页码变化时图标不整树重渲染
   const handlePointerDown = React.useCallback((e: React.PointerEvent, item: NavItem) => {
-    if (e.button !== 0 || pressRef.current) return;
+    if (pressRef.current) return;
+    // 中键(1)：新开标签页。阻止浏览器中键自动滚动，并跳过长按/拖拽计时
+    if (e.button === 1) {
+      e.preventDefault();
+      pressRef.current = { id: item.id, x: e.clientX, y: e.clientY, lp: false, dragging: false, timer: null, middle: true };
+      return;
+    }
+    if (e.button !== 0) return;
     const timer = window.setTimeout(() => {
       const p = pressRef.current;
       if (p) {
@@ -481,10 +490,17 @@ export function NavApp({
     pressRef.current = { id: item.id, x: e.clientX, y: e.clientY, lp: false, dragging: false, timer };
   }, []);
 
-  function handleItemClick(item: NavItem, origin?: { x: number; y: number }) {
+  function handleItemClick(
+    item: NavItem,
+    origin?: { x: number; y: number },
+    opts?: { newTab?: boolean }
+  ) {
     if (!editRef.current) {
-      if (item.type === "link") window.open(item.url, "_blank", "noreferrer");
-      else setOpenFolderId(item.id);
+      if (item.type === "link") {
+        // 普通点击：当前页直接加载网址；修饰键/中键（由调用方透传）才新开标签
+        if (opts?.newTab) window.open(item.url, "_blank", "noreferrer");
+        else window.location.href = item.url;
+      } else setOpenFolderId(item.id);
       return;
     }
     // 编辑模式：点网址 = 编辑，点文件夹 = 进入文件夹
@@ -617,6 +633,7 @@ export function NavApp({
     function onMove(e: PointerEvent) {
       const p = pressRef.current;
       if (!p) return;
+      if (p.middle) return; // 中键只用于新开标签，不参与拖拽
       if (!p.dragging) {
         if (Math.hypot(e.clientX - p.x, e.clientY - p.y) < DRAG_SLOP_PX) return;
         if (p.timer) {
@@ -735,13 +752,20 @@ export function NavApp({
       if (p.lp) return; // 长按仅用于进入编辑模式
       const item = findItem(itemsRef.current, p.id);
       if (item) {
+        // 中键点击链接：直接新开标签页（不依赖修饰键）
+        if (p.middle && item.type === "link") {
+          window.open(item.url, "_blank", "noreferrer");
+          return;
+        }
         if (item.type === "folder") {
           const iconEl = document.querySelector<HTMLElement>(
             `[data-lp-id="${p.id}"] .liquid-glass`
           );
           setOriginRect(iconEl ? iconEl.getBoundingClientRect() : null);
         }
-        handleItemClick(item, { x: e.clientX, y: e.clientY });
+        // 普通点击=当前页加载；Ctrl/Cmd/Shift+点击=新开标签（中键链接已在上方提前处理）
+        const newTab = !!(e.metaKey || e.ctrlKey || e.shiftKey);
+        handleItemClick(item, { x: e.clientX, y: e.clientY }, { newTab });
       }
     }
 
@@ -1069,7 +1093,7 @@ export function NavApp({
     const q = query.trim();
     if (!q) return;
     const target = ENGINES.find((en) => en.key === engine) ?? ENGINES[0];
-    window.open(target.url(q), "_blank", "noreferrer");
+    window.location.href = target.url(q);
   }
 
   /* ---------- 渲染 ---------- */
@@ -1215,10 +1239,7 @@ export function NavApp({
               <a
                 key={l.id}
                 href={l.url}
-                target="_blank"
-                rel="noreferrer"
                 title={l.description || l.url}
-                onClick={() => setQuery("")}
                 className="group flex w-full flex-col items-center gap-3"
               >
                 <span

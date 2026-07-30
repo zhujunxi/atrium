@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.1] - 2026-07-30
+
+### Changed
+
+- **Icon clicks now load the URL in the current tab** instead of opening a new tab. This applies to launchpad icons on the desktop and inside folders; `Ctrl`/`Cmd`/`Shift`+click and middle-click still open the link in a new tab.
+- Search-result icons and the search submit now also navigate the current tab to the result, instead of opening a new tab.
+
+### Fixed
+
+- Removed the redundant query-clearing that fired after clicking a search result — the page navigates away anyway, so clearing was just confusing noise.
+
 ## [0.6.0] - 2026-07-27
 
 ### Added

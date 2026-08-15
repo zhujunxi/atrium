@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.2] - 2026-08-15
+
+### Fixed
+
+- **Daily wallpaper (`bing-daily`) now rolls over across days again.** First-paint pointer resolution used to trust the (possibly stale) cached image pool (`bing-cache-*`) and, on a cross-day open, would treat yesterday's image as today's and stamp it with today's `dayStamp`. The arriving fresh pool then hit the early-return in `applyDailyUpdate` (since `dayStamp` already equaled today), so today's image never got applied — every day the user saw yesterday's (or older) photo. The cached pool is now only trusted when fresh (≤ 30 min); when stale, the old snapshot is kept untouched and the real cross-day switch happens via `applyDailyUpdate` once the fresh pool lands.
+
 ## [0.6.1] - 2026-07-30
 
 ### Changed

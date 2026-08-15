@@ -139,21 +139,34 @@ function pickNext(
  *   标签页后重载，会因 stored.setAt 过旧而每次回来都换一张，体验极差）。轮换只在页面持续
  *   打开、用户正在观看时由页内计时器推进。仅「每日一图跨天」这类每日一次的预期变化会换图。
  * - 无快照（首次使用 / v1 迁移）：按模式取默认第一张。
+ *
+ * 跨天换图有个坑：首屏决策用的是**缓存图池**（bing-cache-*，可能是昨天甚至更早写的）。
+ * 若缓存已过期，pool[0] 还是旧图，此时若把它当作「今日图」提交并盖上今天的 dayStamp，
+ * 随后新池到达时 applyDailyUpdate 会因为 dayStamp 已等于今天而提前返回——今天的图永远
+ * 进不来，用户每天看到的都是昨天（或更早）的那张。因此只有缓存足够新（cacheFresh，即
+ * 当天缓存过）才信任 pool[0]；缓存过期时保持旧快照不动（dayStamp 保持旧值），等新池到达
+ * 后由 applyDailyUpdate 完成真正的跨天切换。
  */
 function resolveInitial(
   sett: WallpaperSettings,
   collection: SavedWallpaper[],
   pool: BingImage[],
-  stored: WallpaperCurrent | null
+  stored: WallpaperCurrent | null,
+  cacheFresh: boolean
 ): WallpaperCurrent | null {
   if (stored) {
     // 打开/重载时不因「轮换间隔已到」换图：轮换计时不再依赖 stored.setAt（旧时间戳曾在
     // 回来瞬间误触发轮换），改由底部 rotation effect 按「页面可见时长」累计推进，从首屏图
     // 呈现、用户开始观看时起算。
-    if (sett.mode === "bing-daily" && stored.dayStamp !== todayStamp() && pool[0]) {
-      const cid = canonicalWallpaperId(pool[0].url);
-      if (cid !== stored.key) return snapFromBing(pool[0]);
-      return { ...stored, dayStamp: todayStamp() };
+    if (sett.mode === "bing-daily" && stored.dayStamp !== todayStamp()) {
+      if (cacheFresh && pool[0]) {
+        const cid = canonicalWallpaperId(pool[0].url);
+        if (cid !== stored.key) return snapFromBing(pool[0]);
+        return { ...stored, dayStamp: todayStamp() };
+      }
+      // 缓存过期：不信任 pool[0] 是今日图，保持旧图（dayStamp 不变），
+      // 等新池到达后由 applyDailyUpdate 切到今日图。
+      return stored;
     }
     return stored;
   }
@@ -246,12 +259,15 @@ export function useWallpaper(locale: string): WallpaperApi {
       if (!alive) return;
       const entry = cacheRes[cacheKey] as { at: number; images: BingImage[] } | undefined;
       const cachedPool = entry?.images ?? [];
+      // 图池缓存是否新鲜（30 分钟内）：新鲜时 pool[0] 可视为「今日图」，跨天决策可直接信任；
+      // 过期（通常是隔夜）时 pool[0] 还是旧图，跨天切换必须等新池到达后由 applyDailyUpdate 完成。
+      const cacheFresh = !!entry && Date.now() - entry.at <= CACHE_TTL;
 
       setCollection(coll);
       setSettings(sett);
       setPool(cachedPool);
 
-      const initial = resolveInitial(sett, coll, cachedPool, stored);
+      const initial = resolveInitial(sett, coll, cachedPool, stored, cacheFresh);
       if (initial) {
         // 直接沿用首屏决策结果；轮换计时不再依赖 stored.setAt（旧时间戳曾在回来瞬间误触发
         // 轮换），改由底部 rotation effect 按「页面可见时长」累计推进。
@@ -271,7 +287,7 @@ export function useWallpaper(locale: string): WallpaperApi {
             // 首次使用且当时无缓存：用新池补建指针
             const sett2 = settRef.current;
             const built = sett2
-              ? resolveInitial(sett2, collRef.current, fresh, null)
+              ? resolveInitial(sett2, collRef.current, fresh, null, true)
               : null;
             if (built) commit(built);
           } else {

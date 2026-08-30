@@ -5,6 +5,27 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.3] - 2026-08-30
+
+### Added
+
+- **Wallpaper download button.** The bottom-right controls now include a download action that saves the current wallpaper as a file (fetched as a blob and handed to `<a download>`, with an error toast on failure).
+
+### Changed
+
+- **Wallpaper switching is now sequential.** "Change wallpaper" walks the active pool in order and wraps around, instead of picking randomly — repeated clicks traverse the whole pool and return to the start.
+- **Bing wallpapers upgraded to UHD sources (3840×2160).** The 1080p URLs returned by the API are rewritten to their `_UHD` variants, so the wallpaper no longer looks soft on high-DPI displays; a 1080p fallback chain kicks in if the UHD variant fails to load.
+- **Bottom-right controls are collapsed by default.** Only the quiet "i" button is visible; hovering the group fades in the download / like / gallery buttons and the copyright text.
+- App icons now fill their container edge-to-edge (no inner padding around the favicon) with a unified **26% corner radius** (main icons and folder-grid mini icons).
+- Header refined: the greeting is smaller (30/36px, semibold) with a lighter, wider-tracked date line above it.
+- The "Shuffle all" mode is renamed **"Cycle all"** (ZH: 混合轮换) to match the new sequential behavior.
+
+### Fixed
+
+- **No more visible wallpaper switch right after opening a new tab.** Cross-day updates are now prepared silently in the background: the pointer is saved to the new daily image, its blurred first-paint backdrop is pre-generated, and the image is prewarmed into the HTTP cache. The open page keeps showing the old image; the next open presents the new wallpaper directly (blurred-to-sharp, no swap animation).
+- **Cross-day edge case:** the cached image pool is now only trusted when it was written *today* (`cacheIsToday`). Previously a cache written shortly before midnight could stamp yesterday's image as "today", blocking the real daily image for the rest of the day.
+- **Auto-rotate can no longer die silently.** The rotation timer now reschedules itself after every tick, so an idle `advance()` (empty pool, or a pool containing only the current image) no longer stops rotation permanently.
+
 ## [0.6.2] - 2026-08-15
 
 ### Fixed

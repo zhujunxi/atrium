@@ -1150,17 +1150,20 @@ export function NavApp({
           setEdit(false);
         }}
       >
-        {/* Hero */}
+        {/* Hero：小日期在上 + 大问候在下（原版排版，仅微调字重与间距） */}
         <div className="flex flex-col items-center pb-2 pt-16 text-center">
           <p
-            className={cn("text-sm text-white/90 drop-shadow", animateIn && "lp-fade-up")}
+            className={cn(
+              "text-[13px] font-medium tracking-wider text-white/85 drop-shadow",
+              animateIn && "lp-fade-up"
+            )}
             style={animateIn ? { animationDelay: "150ms" } : undefined}
           >
             {today}
           </p>
           <h1
             className={cn(
-              "mt-2 text-4xl font-bold tracking-tight text-white drop-shadow-[0_2px_8px_rgba(0,0,0,0.5)] sm:text-5xl",
+              "mt-1.5 text-3xl font-semibold tracking-tight text-white drop-shadow-[0_2px_8px_rgba(0,0,0,0.5)] sm:text-4xl",
               animateIn && "lp-fade-up"
             )}
             style={animateIn ? { animationDelay: "250ms" } : undefined}

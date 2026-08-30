@@ -1,11 +1,11 @@
 "use client";
 
 import * as React from "react";
-import { Heart, Images, RefreshCw } from "lucide-react";
+import { Download, Heart, Images, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { useI18n } from "@/lib/i18n";
-import { saveWallpaperBackdrop } from "@/lib/wallpaper-store";
+import { saveWallpaperBackdrop, todayStamp } from "@/lib/wallpaper-store";
 import { useWallpaper } from "@/lib/use-wallpaper";
 import { WallpaperGallery } from "@/components/wallpaper-gallery";
 import { readEntrance } from "@/lib/store";
@@ -15,11 +15,28 @@ export function entranceEnabled(): boolean {
   return readEntrance();
 }
 
+/** UHD 源加载失败时的 1080p 回退地址（少数老必应图没有 _UHD 变体） */
+function loResFallback(url: string): string | null {
+  try {
+    const u = new URL(url);
+    const id = u.searchParams.get("id");
+    if (id && id.includes("_UHD.")) {
+      return `${u.origin}${u.pathname}?id=${encodeURIComponent(
+        id.replace(/_UHD\./, "_1920x1080.")
+      )}`;
+    }
+  } catch {
+    /* 非法 URL：无回退 */
+  }
+  return null;
+}
+
 /**
  * 桌面壁纸（纯渲染层）。
  * 产品逻辑（图池获取、指针决策、轮换、收藏）全部在 useWallpaper 中：
- * 打开新标签页永远先显示上次那张图，只有「跨天每日更新 / 手动换一张 /
- * 画廊选择 / 轮换到期」这些可预期时刻才切换。
+ * 打开新标签页永远先显示上次那张图；跨天的每日新图由 useWallpaper 在后台静默就绪
+ * （指针 + 兜底缩略图 + 缓存预热），下次打开直接呈现，打开瞬间绝无换图动画；
+ * 其余可预期切换（手动换一张 / 画廊选择 / 轮换到期）走 700ms 交叉淡入。
  */
 export function DesktopBackground() {
   const { t, locale } = useI18n();
@@ -51,31 +68,50 @@ export function DesktopBackground() {
   }, [galleryOpen]);
 
   // 目标图变化且不同于当前显示图时：先预加载并解码新图，像素完全就绪后再呈现。
+  // 候选按序尝试：UHD 优先，失败自动回退 1080p。
   // - 首次加载（imgUrl 为空，无旧图兜底）：直接展示，不做渐入——避免灰底停留 + 渐入被
   //   跳过造成的闪屏（首屏直接展示）。
   // - 切换（imgUrl 非空，有旧图兜底）：走交叉淡入层，700ms 平滑过渡。
   React.useEffect(() => {
     if (!current?.url || current.url === imgUrl) return;
     let cancelled = false;
-    const pre = new Image();
-    pre.src = current.url;
-    const show = () => {
+    const candidates = [current.url, loResFallback(current.url)].filter(
+      (u): u is string => !!u
+    );
+    const show = (url: string) => {
       if (cancelled) return;
       if (!imgUrl) {
-        setImgUrl(current.url);
-        void saveWallpaperBackdrop(current.url);
+        setImgUrl(url);
+        void saveWallpaperBackdrop(url);
       } else {
-        setNext({ url: current.url, ready: false });
+        setNext({ url, ready: false });
       }
     };
-    if (typeof pre.decode === "function") {
-      pre.decode().then(show).catch(show);
-    } else {
-      pre.onload = show;
-      pre.onerror = () => {
-        if (!cancelled && imgUrl) setNext(null);
-      };
-    }
+    const attempt = (i: number) => {
+      if (cancelled) return;
+      if (i >= candidates.length) {
+        // 全部候选失败：不动显示层（boot.js 兜底层仍然可见）
+        if (imgUrl) setNext(null);
+        return;
+      }
+      const pre = new Image();
+      pre.src = candidates[i];
+      const ok = () => show(candidates[i]);
+      if (typeof pre.decode === "function") {
+        pre
+          .decode()
+          .then(ok)
+          .catch(() => {
+            // decode 失败：已加载但解不开的极端情况仍然展示，否则试下一个候选
+            if (pre.naturalWidth > 0) ok();
+            else attempt(i + 1);
+          });
+      } else {
+        pre.onload = ok;
+        pre.onerror = () => attempt(i + 1);
+      }
+    };
+    attempt(0);
     return () => {
       cancelled = true;
     };
@@ -103,6 +139,29 @@ export function DesktopBackground() {
     toast.success(res.liked ? t("toast.wallpaperAdded") : t("toast.wallpaperRemoved"));
   }
 
+  /** 下载原图：fetch 成 blob 再走 <a download>，绕开跨域 download 属性失效的问题 */
+  async function onDownload() {
+    if (!current) return;
+    try {
+      const res = await fetch(current.url, { cache: "force-cache" });
+      const blob = await res.blob();
+      const objectUrl = URL.createObjectURL(blob);
+      const ext =
+        /\.([a-z0-9]+)$/i.exec(new URL(current.url).pathname)?.[1] ??
+        blob.type.split("/")[1] ??
+        "jpg";
+      const a = document.createElement("a");
+      a.href = objectUrl;
+      a.download = `wallpaper-${todayStamp()}.${ext}`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
+    } catch {
+      toast.error(t("toast.wallpaperDownloadFail"));
+    }
+  }
+
   function onSelectFromGallery(id: string) {
     selectFromGallery(id);
     setGalleryOpen(false);
@@ -111,6 +170,10 @@ export function DesktopBackground() {
 
   const btn =
     "group/btn relative flex h-7 w-7 cursor-pointer items-center justify-center rounded-full border border-white/15 bg-black/30 text-white/80 shadow-lg backdrop-blur-md transition-all duration-200 hover:scale-110 hover:bg-black/40 hover:text-white active:scale-90";
+  // 次要按钮：默认隐藏（连占位也收起），悬停整组时从右侧滑入展开——
+  // 平时右下角只有一个安静的「i」，悬停才露出下载 / 收藏 / 画廊
+  const btnHidden =
+    "pointer-events-none opacity-0 group-hover:pointer-events-auto group-hover:opacity-100";
 
   return (
     <>
@@ -164,6 +227,17 @@ export function DesktopBackground() {
               {current.copyright || current.title}
             </span>
 
+            {/* 下载：悬停整组时出现 */}
+            <button
+              type="button"
+              onClick={onDownload}
+              title={t("a11y.downloadWallpaper")}
+              aria-label={t("a11y.downloadWallpaper")}
+              className={cn(btn, btnHidden, "mr-1.5")}
+            >
+              <Download className="h-3.5 w-3.5" />
+            </button>
+
             {/* 收藏：已收藏显示实心红心 */}
             <button
               type="button"
@@ -171,7 +245,7 @@ export function DesktopBackground() {
               title={liked ? t("a11y.unlikeWallpaper") : t("a11y.likeWallpaper")}
               aria-label={liked ? t("a11y.unlikeWallpaper") : t("a11y.likeWallpaper")}
               aria-pressed={liked}
-              className={cn(btn, "mr-1.5", liked && "text-rose-400")}
+              className={cn(btn, btnHidden, "mr-1.5", liked && "text-rose-400")}
             >
               <Heart
                 className={cn("h-3.5 w-3.5 transition-all duration-200", liked && "fill-rose-400")}
@@ -185,12 +259,12 @@ export function DesktopBackground() {
               title={t("a11y.openGallery")}
               aria-label={t("a11y.openGallery")}
               aria-expanded={galleryOpen}
-              className={cn(btn, "mr-1.5", galleryOpen && "scale-110 bg-black/40 text-white")}
+              className={cn(btn, btnHidden, "mr-1.5", galleryOpen && "scale-110 bg-black/40 text-white")}
             >
               <Images className="h-3.5 w-3.5" />
             </button>
 
-            {/* 换一张：默认显示 i，hover 切换为刷新图标 */}
+            {/* 换一张（顺序循环）：常驻显示的唯一点位；hover 按钮本体时 i 切换为刷新图标 */}
             <button
               type="button"
               onClick={advance}

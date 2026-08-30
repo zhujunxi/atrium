@@ -169,7 +169,7 @@ export function DesktopBackground() {
   }
 
   const btn =
-    "group/btn relative flex h-7 w-7 cursor-pointer items-center justify-center rounded-full border border-white/15 bg-black/30 text-white/80 shadow-lg backdrop-blur-md transition-all duration-200 hover:scale-110 hover:bg-black/40 hover:text-white active:scale-90";
+    "group/btn relative flex h-7 w-7 cursor-pointer items-center justify-center rounded-full border border-white/15 bg-black/30 text-white/80 backdrop-blur-md transition-all duration-200 hover:scale-110 hover:bg-black/40 hover:text-white active:scale-90";
   // 次要按钮：默认隐藏（连占位也收起），悬停整组时从右侧滑入展开——
   // 平时右下角只有一个安静的「i」，悬停才露出下载 / 收藏 / 画廊
   const btnHidden =

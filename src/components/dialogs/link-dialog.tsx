@@ -171,7 +171,7 @@ export function LinkDialog({ state, folders, onOpenChange, onSubmit }: LinkDialo
           corner={32}
           scale={30}
           blur={12}
-          className="liquid-glass-folder relative rounded-[2rem] p-6 text-white shadow-2xl shadow-black/30"
+          className="liquid-glass-folder relative rounded-[2rem] p-6 text-white"
         >
           <div className="relative z-[3]">
             <div className="mb-4 flex items-center justify-between">

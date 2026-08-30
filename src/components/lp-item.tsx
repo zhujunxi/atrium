@@ -66,7 +66,7 @@ export const LpItem = React.memo(function LpItem({
         className={cn(
           "relative rounded-[24%] transition-[transform,box-shadow] duration-200",
           edit && "animate-jiggle",
-          !edit && !dragging && "group-hover:-translate-y-1 group-hover:shadow-[0_4px_8px_rgba(0,0,0,0.12),0_14px_28px_rgba(0,0,0,0.2)]",
+          !edit && !dragging && "group-hover:-translate-y-1 group-hover:shadow-[0_2px_4px_rgba(0,0,0,0.10),0_6px_14px_rgba(0,0,0,0.12)]",
           (mergeTarget || folderTarget) && "scale-110"
         )}
       >

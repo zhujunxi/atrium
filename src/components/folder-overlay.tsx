@@ -215,7 +215,7 @@ export function FolderOverlay({
           corner={32}
           scale={30}
           blur={12}
-          className="liquid-glass-folder relative w-full rounded-[2rem] p-6 shadow-2xl shadow-black/30"
+          className="liquid-glass-folder relative w-full rounded-[2rem] p-6"
         >
           <div className="relative z-[3] max-h-[72vh] overflow-y-auto -m-3 p-3">
             <div key={current.id} className="grid grid-cols-4 gap-x-2 gap-y-7 sm:grid-cols-5">
@@ -239,7 +239,7 @@ export function FolderOverlay({
                     onClick={() => !edit && setStack((s) => [...s, it.id])}
                     className="group relative flex w-full cursor-pointer select-none flex-col items-center gap-3 outline-none"
                   >
-                    <span className="relative rounded-[24%] transition-[transform,box-shadow] duration-200 group-hover:-translate-y-1 group-hover:shadow-[0_4px_8px_rgba(0,0,0,0.12),0_14px_28px_rgba(0,0,0,0.2)]">
+                    <span className="relative rounded-[24%] transition-[transform,box-shadow] duration-200 group-hover:-translate-y-1 group-hover:shadow-[0_2px_4px_rgba(0,0,0,0.10),0_6px_14px_rgba(0,0,0,0.12)]">
                       <FolderIcon name={it.name} items={it.items} />
                       {edit && (
                         <button

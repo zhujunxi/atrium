@@ -8,7 +8,7 @@ import { LiquidGlass } from "@/components/liquid-glass";
 
 /**
  * macOS 风格应用图标：
- * - 图标全出血填充 squircle（22.5% 连续圆角），无白边白底；
+ * - 图标全出血填充 squircle（26% 连续圆角），无白边白底；
  * - 表面叠加液态玻璃蒙版（顶部高光 + 边缘内发光，见 globals.css .icon-glass）；
  * - favicon 加载失败时回退为渐变字母图标。
  */
@@ -39,7 +39,7 @@ export function AppIcon({
     <span
       style={{ width: sizeVar, height: sizeVar, ...style }}
       className={cn(
-        "relative block shrink-0 overflow-hidden rounded-[24%]",
+        "relative block shrink-0 overflow-hidden rounded-[26%]",
         "shadow-[0_1px_2px_rgba(0,0,0,0.12),0_6px_16px_rgba(0,0,0,0.14)] ring-1 ring-black/[0.08] dark:ring-white/10",
         className
       )}
@@ -58,9 +58,9 @@ export function AppIcon({
         {letter}
       </span>
     )}
-    {/* 网站图标：方形 touch-icon 会全出血铺满；glyph 型 favicon 则等比填满 */}
+    {/* 网站图标：全出血铺满，无内部留白 */}
     {!useLetter && candidates[srcIndex] && (
-      <span className="absolute inset-[15%]">
+      <span className="absolute inset-0">
         <img
           src={candidates[srcIndex]}
           alt=""
@@ -96,11 +96,11 @@ function MiniIcon({ link, size }: { link: NavLink; size: number | string }) {
   return (
     <span
       style={{ width: size, height: size }}
-      className="relative block overflow-hidden rounded-[28%] bg-white shadow-sm ring-1 ring-black/[0.06] dark:ring-white/10"
+      className="relative block overflow-hidden rounded-[26%] bg-white shadow-sm ring-1 ring-black/[0.06] dark:ring-white/10"
     >
-      {/* 加载成功：白底 + favicon 居中略缩 */}
+      {/* 加载成功：白底 + favicon 全出血铺满，无内部留白 */}
       {!useLetter && (
-        <span className="absolute inset-[15%]">
+        <span className="absolute inset-0">
           {candidates[srcIndex] && (
             <img
               src={candidates[srcIndex]}

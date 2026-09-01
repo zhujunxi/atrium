@@ -42,6 +42,8 @@ export interface BingImage {
   title: string;
   copyright: string;
   copyrightlink: string;
+  /** 该图属于哪一天（YYYY-MM-DD，来自接口 startdate），必应每日一图的身份 */
+  date: string;
 }
 
 // 扩展页无 CORS 限制（配合 host_permissions），直连必应每日图接口。
@@ -85,10 +87,28 @@ function uhdUrl(url: string): string {
   return url;
 }
 
+/**
+ * 必应接口的 startdate（"20260901"）→ 本地日期戳 "2026-09-01"。
+ * 必须是字符串切分而非 Date 解析：new Date("2026-09-01") 按 UTC 处理，
+ * 东八区以西会整体退一天，日期就对不上了。
+ */
+function parseBingDate(raw?: string): string {
+  if (raw && /^\d{8}$/.test(raw)) {
+    return `${raw.slice(0, 4)}-${raw.slice(4, 6)}-${raw.slice(6, 8)}`;
+  }
+  return "";
+}
+
 async function fetchBing(mkt: string): Promise<BingImage[]> {
   const res = await fetch(bingApiUrl(mkt), { cache: "no-store" });
   const data = (await res.json()) as {
-    images?: { url?: string; title?: string; copyright?: string; copyrightlink?: string }[];
+    images?: {
+      url?: string;
+      title?: string;
+      copyright?: string;
+      copyrightlink?: string;
+      startdate?: string;
+    }[];
   };
   return (data.images || [])
     .filter((img) => img.url)
@@ -97,6 +117,7 @@ async function fetchBing(mkt: string): Promise<BingImage[]> {
       title: img.title ?? "",
       copyright: img.copyright ?? "",
       copyrightlink: img.copyrightlink ?? "",
+      date: parseBingDate(img.startdate),
     }));
 }
 
@@ -111,6 +132,7 @@ function snapFromBing(img: BingImage): WallpaperCurrent {
     collectionId: null,
     setAt: new Date().toISOString(),
     dayStamp: todayStamp(),
+    date: img.date || undefined,
   };
 }
 
@@ -125,6 +147,7 @@ function snapFromSaved(w: SavedWallpaper): WallpaperCurrent {
     collectionId: w.id,
     setAt: new Date().toISOString(),
     dayStamp: todayStamp(),
+    date: w.date,
   };
 }
 
@@ -480,6 +503,7 @@ export function useWallpaper(locale: string): WallpaperApi {
         copyrightlink: cur.copyrightlink,
         thumb,
         source: cur.kind === "collection" ? "custom" : "bing",
+        date: cur.date,
       });
       setCollection(next);
       return { liked: true };

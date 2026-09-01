@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { useI18n } from "@/lib/i18n";
 import { saveWallpaperBackdrop, todayStamp } from "@/lib/wallpaper-store";
+import { formatDayStamp } from "@/lib/utils";
 import { useWallpaper } from "@/lib/use-wallpaper";
 import { WallpaperGallery } from "@/components/wallpaper-gallery";
 import { readEntrance } from "@/lib/store";
@@ -29,6 +30,18 @@ function loResFallback(url: string): string | null {
     /* 非法 URL：无回退 */
   }
   return null;
+}
+
+/**
+ * 当前壁纸的日期戳（YYYY-MM-DD）。
+ * 首选快照自带的 date（必应接口给的发布日）；历史快照没有该字段时，
+ * 必应图回退 dayStamp（每日一图模式下两者一致），自定义收藏图则无日期可用。
+ */
+function wallpaperDateStamp(
+  current: { date?: string; dayStamp: string; kind: "bing" | "collection" } | null
+): string {
+  if (!current) return "";
+  return current.date || (current.kind === "bing" ? current.dayStamp : "");
 }
 
 /**
@@ -150,9 +163,12 @@ export function DesktopBackground() {
         /\.([a-z0-9]+)$/i.exec(new URL(current.url).pathname)?.[1] ??
         blob.type.split("/")[1] ??
         "jpg";
+      // 文件名带壁纸自己的日期（必应每日一图，一天一张）：同一张图在任何时候下载
+      // 名字都一致，且按文件名排序即是按日期排序。
+      const stamp = wallpaperDateStamp(current) || todayStamp();
       const a = document.createElement("a");
       a.href = objectUrl;
-      a.download = `wallpaper-${todayStamp()}.${ext}`;
+      a.download = `wallpaper-${stamp}.${ext}`;
       document.body.appendChild(a);
       a.click();
       a.remove();
@@ -167,6 +183,12 @@ export function DesktopBackground() {
     setGalleryOpen(false);
     toast.success(t("toast.wallpaperSet"));
   }
+
+  // 底栏信息行：壁纸日期 + 版权说明（无日期的自定义图只显示版权）
+  const wpDate = wallpaperDateStamp(current);
+  const infoLine = wpDate
+    ? `${formatDayStamp(wpDate, locale)} · ${current?.copyright || current?.title || ""}`.trim()
+    : current?.copyright || current?.title || "";
 
   const btn =
     "group/btn relative flex h-7 w-7 cursor-pointer items-center justify-center rounded-full border border-white/15 bg-black/30 text-white/80 backdrop-blur-md transition-all duration-200 hover:scale-110 hover:bg-black/40 hover:text-white active:scale-90";
@@ -224,7 +246,7 @@ export function DesktopBackground() {
           <div className="group fixed bottom-2 right-3 z-30 flex items-center">
             {/* 悬停时向左展开版权文字，默认只显示圆形按钮 */}
             <span className="pointer-events-none mr-0 max-w-0 overflow-hidden whitespace-nowrap text-[11px] text-white/80 opacity-0 transition-all duration-300 group-hover:mr-2 group-hover:max-w-[60vw] group-hover:opacity-100">
-              {current.copyright || current.title}
+              {infoLine}
             </span>
 
             {/* 下载：悬停整组时出现 */}

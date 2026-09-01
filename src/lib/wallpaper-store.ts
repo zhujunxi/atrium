@@ -185,6 +185,7 @@ export async function loadWallpaperCurrent(): Promise<WallpaperCurrent | null> {
       collectionId: typeof c.collectionId === "string" ? c.collectionId : null,
       setAt: c.setAt,
       dayStamp: typeof c.dayStamp === "string" ? c.dayStamp : todayStamp(),
+      date: typeof c.date === "string" ? c.date : undefined,
     };
   }
   return null;

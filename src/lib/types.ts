@@ -46,6 +46,8 @@ export interface SavedWallpaper {
   thumb: string;
   savedAt: string;
   source: WallpaperSource;
+  /** 壁纸本身的日期（YYYY-MM-DD，必应每日图的发布日）；自定义图无日期 */
+  date?: string;
 }
 
 /** 壁纸展示模式：每日推荐 / 我的收藏 / 混合随机 */
@@ -85,4 +87,10 @@ export interface WallpaperCurrent {
   setAt: string;
   /** 设置当天的本地日期戳（YYYY-MM-DD），bing-daily 模式跨天更新的依据 */
   dayStamp: string;
+  /**
+   * 壁纸自身的日期（YYYY-MM-DD，必应每日图的发布日）。
+   * 与 dayStamp 不同：dayStamp 是「这张图被设为当天的日期」，date 是「这张图属于哪一天」，
+   * 下载文件名与底栏信息展示都以此为准；自定义收藏图没有该字段。
+   */
+  date?: string;
 }

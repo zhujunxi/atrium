@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { X } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { cn, formatDayStamp } from "@/lib/utils";
 import { useI18n } from "@/lib/i18n";
 import { LiquidGlass } from "@/components/liquid-glass";
 import type { SavedWallpaper } from "@/lib/types";
@@ -18,7 +18,7 @@ interface Props {
 
 /** 壁纸收藏画廊：液态玻璃弹层，网格展示缩略图，点击设为当前，悬停可删除 */
 export function WallpaperGallery({ items, currentId, onClose, onSelect, onRemove }: Props) {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
 
   return (
     <LiquidGlass
@@ -60,7 +60,14 @@ export function WallpaperGallery({ items, currentId, onClose, onSelect, onRemove
                   <button
                     type="button"
                     onClick={() => onSelect(w.id)}
-                    aria-label={w.title || w.copyright || t("wallpaper.galleryTitle")}
+                    aria-label={
+                      [
+                        w.date ? formatDayStamp(w.date, locale, "short") : "",
+                        w.title || w.copyright || t("wallpaper.galleryTitle"),
+                      ]
+                        .filter(Boolean)
+                        .join(" · ")
+                    }
                     className={cn(
                       "absolute inset-0 overflow-hidden rounded-xl border bg-black/20 transition-all",
                       isCurrent
@@ -85,6 +92,13 @@ export function WallpaperGallery({ items, currentId, onClose, onSelect, onRemove
                   {isCurrent && (
                     <span className="pointer-events-none absolute left-1 top-1 rounded-md bg-black/55 px-1.5 py-0.5 text-[10px] font-medium text-white">
                       {t("wallpaper.galleryCurrent")}
+                    </span>
+                  )}
+
+                  {/* 日期角标（必应每日一图，一天一张）：收藏多张时一眼分辨是哪天的图 */}
+                  {w.date && (
+                    <span className="pointer-events-none absolute bottom-1 right-1 rounded-md bg-black/55 px-1.5 py-0.5 text-[10px] font-medium tabular-nums text-white/85">
+                      {formatDayStamp(w.date, locale, "short")}
                     </span>
                   )}
 

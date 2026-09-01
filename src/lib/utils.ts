@@ -33,3 +33,24 @@ export function domainOf(url: string) {
   }
 }
 
+/**
+ * 日期戳（YYYY-MM-DD）→ 按界面语言格式化。
+ * full：中文「2026年9月1日」/ 英文「Sep 1, 2026」；short：中文「9月1日」/ 英文「Sep 1」。
+ * 手工按年月日构造本地日期，避开 new Date("YYYY-MM-DD") 按 UTC 解析、
+ * 在东八区以西整体退一天的问题（日期戳是纯日历日，不含时区）。
+ */
+export function formatDayStamp(
+  date: string,
+  locale: string,
+  style: "full" | "short" = "full"
+): string {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return date;
+  const [y, m, d] = date.split("-").map(Number);
+  const dt = new Date(y, m - 1, d);
+  return new Intl.DateTimeFormat(locale === "zh-CN" ? "zh-CN" : "en-US", {
+    year: style === "full" ? "numeric" : undefined,
+    month: locale === "zh-CN" ? "long" : "short",
+    day: "numeric",
+  }).format(dt);
+}
+

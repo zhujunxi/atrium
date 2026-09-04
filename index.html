@@ -5,6 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <!-- 告知浏览器支持双主题，暗色系统下首帧默认底色不再是白色 -->
     <meta name="color-scheme" content="dark light" />
+    <!-- 提前与壁纸源（必应 CDN）建连，省一次 DNS+TLS 往返，冷启动首图更快到达 -->
+    <link rel="preconnect" href="https://www.bing.com" crossorigin />
     <title>Atrium</title>
   </head>
   <body>

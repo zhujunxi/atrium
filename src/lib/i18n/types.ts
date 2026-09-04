@@ -20,11 +20,8 @@ export const KEYS = [
   "settings.export",
   "settings.import",
   "settings.importExportSyncHint",
-  // Wallpaper (collection + mode)
+  // Wallpaper
   "settings.wallpaper",
-  "settings.wallpaperDaily",
-  "settings.wallpaperCollection",
-  "settings.wallpaperShuffleAll",
   "settings.autoRotate",
   "settings.rotateInterval",
   "settings.dimMask",
@@ -73,7 +70,6 @@ export const KEYS = [
   "a11y.unlikeWallpaper",
   "a11y.openGallery",
   "a11y.closeGallery",
-  "a11y.wallpaperMode",
   // Wallpaper gallery
   "wallpaper.galleryTitle",
   "wallpaper.galleryCurrent",

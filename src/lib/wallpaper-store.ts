@@ -1,7 +1,7 @@
+import { getWallpaperBlob } from "@/lib/wallpaper-cache";
 import type {
   SavedWallpaper,
   WallpaperCurrent,
-  WallpaperMode,
   WallpaperSettings,
 } from "@/lib/types";
 
@@ -39,7 +39,7 @@ export function canonicalWallpaperId(rawUrl: string): string {
   }
 }
 
-/** 本地日期戳（YYYY-MM-DD），bing-daily 跨天更新判定用 */
+/** 本地日期戳（YYYY-MM-DD），用作壁纸快照的日期记录 */
 export function todayStamp(): string {
   const d = new Date();
   const mm = String(d.getMonth() + 1).padStart(2, "0");
@@ -60,7 +60,6 @@ function withCollectionWrite<T>(fn: () => Promise<T>): Promise<T> {
 }
 
 const DEFAULT_SETTINGS: WallpaperSettings = {
-  mode: "bing-daily",
   autoRotate: false,
   rotateIntervalMin: 30,
   dimMask: true,
@@ -144,7 +143,9 @@ export async function reorderCollection(ids: string[]): Promise<SavedWallpaper[]
 export async function loadWallpaperSettings(): Promise<WallpaperSettings> {
   const res = await chrome.storage.local.get(SETT_KEY);
   const s = res[SETT_KEY];
-  if (s && typeof s === "object") return { ...DEFAULT_SETTINGS, ...s } as WallpaperSettings;
+  if (s && typeof s === "object") {
+    return { ...DEFAULT_SETTINGS, ...(s as Partial<WallpaperSettings>) };
+  }
   return { ...DEFAULT_SETTINGS };
 }
 
@@ -207,10 +208,15 @@ const BACKDROP_COLOR_LS_KEY = "wp:backdrop-color"; // 兜底图平均色，作�
 
 /**
  * 把指定壁纸压缩为 32px 宽的极小缩略图并缓存，用作刷新首屏的模糊兜底。
+ *
+ * 它锁定了「下次打开第一帧看到的是什么」，因此必须**与当前展示的那张图一致**，
+ * 否则首帧会出现「模糊的是 A、清晰后是 B」的错配。
+ * 由 useWallpaper 在每次指针变化后调用。
+ *
  * 源 url 未变化时直接跳过（每次开新标签页都会调用，避免重复解码/编码）。
  * 失败静默忽略（兜底图缺失时 boot.js 会回退到纯色底）。
  */
-export async function saveWallpaperBackdrop(url: string): Promise<void> {
+export async function saveWallpaperBackdrop(url: string, key?: string): Promise<void> {
   try {
     if (
       localStorage.getItem(BACKDROP_SRC_LS_KEY) === url &&
@@ -221,8 +227,12 @@ export async function saveWallpaperBackdrop(url: string): Promise<void> {
     ) {
       return;
     }
-    const res = await fetch(url, { cache: "force-cache" });
-    const blob = await res.blob();
+    // 优先用本地图库的字节：图已下载过就不必再走一次网络
+    let blob = key ? await getWallpaperBlob(key) : null;
+    if (!blob) {
+      const res = await fetch(url, { cache: "force-cache" });
+      blob = await res.blob();
+    }
     const bmp = await createImageBitmap(blob);
     const scale = Math.min(1, 32 / bmp.width);
     const w = Math.max(1, Math.round(bmp.width * scale));
@@ -260,6 +270,40 @@ export async function saveWallpaperBackdrop(url: string): Promise<void> {
   }
 }
 
+// --- 首帧清晰图（瞬时上屏的关键） -----------------------------------------
+// 把「当前展示壁纸的完整字节」以 dataURL 落进 localStorage，供 boot.js 在首帧
+// 同步画出真正的清晰图，而不是 32px 模糊兜底——localStorage 是同步 API，
+// boot.js 在 React 挂载前读它并铺到 body，整张图随首帧一并上屏，不再有
+// 「先糊后清」的等待。只在字节已在本地图库时写；否则跳过，boot.js 退化模糊兜底。
+
+const DISPLAY_LS_KEY = "wp:display"; // 完整清晰图 dataURL（与 wp:backdrop 同源，但这是真图）
+const DISPLAY_KEY_LS_KEY = "wp:display-key"; // 校验：与当前展示图一致才用，避免错配
+const DISPLAY_MAX_BYTES = 1.5 * 1024 * 1024; // 超过则放弃写全图，保护 localStorage 配额
+
+/**
+ * 缓存当前展示壁纸的完整 dataURL，供下次打开首帧瞬时呈现清晰图。
+ * 写入为后台行为（commit / 初始化时触发），不阻塞首屏。
+ * 字节不在本地图库（冷启动 / 图库不可用时）直接跳过——boot.js 会回到模糊兜底。
+ */
+export async function saveDisplayedImage(key: string): Promise<void> {
+  try {
+    if (localStorage.getItem(DISPLAY_KEY_LS_KEY) === key) return; // 同一张，跳过
+    const blob = await getWallpaperBlob(key);
+    if (!blob || blob.size > DISPLAY_MAX_BYTES) return; // 太大或没命中：放弃，退化为模糊
+    const dataUrl = await new Promise<string | null>((resolve) => {
+      const fr = new FileReader();
+      fr.onload = () => resolve(typeof fr.result === "string" ? fr.result : null);
+      fr.onerror = () => resolve(null);
+      fr.readAsDataURL(blob);
+    });
+    if (!dataUrl) return;
+    localStorage.setItem(DISPLAY_LS_KEY, dataUrl);
+    localStorage.setItem(DISPLAY_KEY_LS_KEY, key);
+  } catch {
+    /* 配额 / 隐私模式等异常：退回模糊兜底 */
+  }
+}
+
 // --- 缩略图生成 -----------------------------------------------------------
 
 /**
@@ -287,5 +331,3 @@ export async function generateThumb(url: string, maxW = 160): Promise<string> {
     return "";
   }
 }
-
-export type { WallpaperMode };

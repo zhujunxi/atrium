@@ -12,8 +12,14 @@ import {
   saveWallpaperBackdrop,
   saveWallpaperCurrent,
   saveWallpaperSettings,
+  saveDisplayedImage,
   todayStamp,
 } from "@/lib/wallpaper-store";
+import {
+  cacheWallpaper,
+  hasWallpaper,
+  resolveWallpaperUrl,
+} from "@/lib/wallpaper-cache";
 import type {
   SavedWallpaper,
   WallpaperCurrent,
@@ -21,20 +27,23 @@ import type {
 } from "@/lib/types";
 
 /**
- * 壁纸控制器（产品逻辑单一来源）。
+ * 壁纸控制器（产品逻辑的唯一来源）。
  *
- * 设计原则：壁纸只在「可预期的时刻」变化——
- * 1. 打开新标签页：永远先显示上次那张（渲染只依赖 WallpaperCurrent 的 url 快照，
- *    不依赖必应图池的加载结果与顺序），打开瞬间绝无换图动画；
- * 2. 跨天且处于「每日一图」模式：当日新图在本次打开期间**静默就绪**——
- *    只落盘指针、预生成首屏兜底缩略图并预热 HTTP 缓存，当前页继续显示旧图；
- *    下一次打开时 boot.js 首帧即是新图的模糊兜底，React 直接呈现清晰新图，
- *    用户感知是「打开就有新壁纸」，而不是「打开后当着面换了一张」；
- * 3. 用户点「换一张」或在画廊中选择；
- * 4. 自动轮换：仅按「页面可见时长」推进，后台逗留不计入；切回标签页不会因后台流逝的
- *    时间而在回来瞬间换图，用户每次切回来看到的就是离开时的那张；页面开着、可见且
- *    累计可见时长到期时正常交叉淡入。
- * 切换界面语言只影响后续新图的来源与文案，不改变当前展示的图。
+ * ── 核心不变量 ────────────────────────────────────────────────
+ *   1. 屏幕上展示的那张图，字节必定已在本地图库 → 打开即可呈现，无需等网络。
+ *   2. 当前壁纸是**全局唯一**的一份（所有标签页共用同一个指针）
+ *      → 同时开几个新标签页，看到的必然是同一张。
+ *   3. 画面只在三个时机变化：轮换到点、用户操作、以及首次安装的那一次。
+ *
+ * ── 为什么没有「预备图指针」─────────────────────────────────────
+ *   曾经有过：后台下好一张写进全局指针，下个标签页打开时切过去。
+ *   结果是每开一个标签页就消费一次，三个面板三张图——全局指针被各自消费，
+ *   必然发散。所以预备图**只下字节、不动指针**：
+ *   预热的是本地图库，切换的时机由每个页面自己决定（轮换到点 / 用户点换一张）。
+ *
+ * ── 慢路径只有一条 ──────────────────────────────────────────────
+ *   首次安装（本地图库为空、无任何指针）时不得不等一次网络。
+ *   除此之外，打开永远是「读本地字节 → 解码 → 上屏」，几十毫秒。
  */
 
 export interface BingImage {
@@ -47,9 +56,15 @@ export interface BingImage {
 }
 
 // 扩展页无 CORS 限制（配合 host_permissions），直连必应每日图接口。
-// mkt 跟随界面语言：中文界面取 zh-CN（中文文案），其余取 en-US。
 const BING_BASE = "https://www.bing.com";
-const CACHE_TTL = 30 * 60 * 1000; // 图池缓存 30 分钟（只影响「换一张」的池子新鲜度）
+/** 图池缓存 30 分钟（只影响「换一张」候选的新鲜度，不影响展示） */
+const BING_CACHE_TTL = 30 * 60 * 1000;
+/** 页面长期开着时，每 10 分钟回看一次图池，让新图有机会进入轮换 */
+const POLL_INTERVAL = 10 * 60 * 1000;
+/** 交叉淡入时长，blob URL 延后释放要覆盖它 */
+const REVOKE_DELAY = 3000;
+/** 空闲预载的等待上限：宁可晚一点，也不跟首屏抢带宽 */
+const IDLE_TIMEOUT = 3000;
 
 function bingApiUrl(mkt: string) {
   return `https://www.bing.com/HPImageArchive.aspx?format=js&idx=0&n=8&mkt=${mkt}`;
@@ -59,56 +74,34 @@ function mktForLocale(locale: string): string {
   return locale === "zh-CN" ? "zh-CN" : "en-US";
 }
 
-/** 时间戳 → 本地日期戳（YYYY-MM-DD），与 todayStamp 同格式 */
-function dayStampOf(ts: number): string {
-  const d = new Date(ts);
-  const mm = String(d.getMonth() + 1).padStart(2, "0");
-  const dd = String(d.getDate()).padStart(2, "0");
-  return `${d.getFullYear()}-${mm}-${dd}`;
+function poolCacheKey(locale: string): string {
+  return `bing-cache-${locale}`;
 }
 
-/**
- * 把必应 API 返回的 1080p 图升级为 UHD（3840x2160）源：
- * url 的 id 参数带 _1920x1080.jpg 分辨率后缀，换成 _UHD 即可取到 4K 原图，
- * 高分屏（尤其 macOS Retina）上 1080p 拉伸铺满会明显发糊。
- * 只保留 id 参数构造干净 URL；少数老图没有 UHD 变体，展示层有 1080p 回退。
- */
-function uhdUrl(url: string): string {
-  try {
-    const u = new URL(url);
-    const id = u.searchParams.get("id");
-    if (id) {
-      const uhd = id.replace(/_\d+x\d+\./, "_UHD.");
-      if (uhd !== id) return `${BING_BASE}/th?id=${encodeURIComponent(uhd)}`;
+/** 浏览器空闲时再跑，避免和首屏抢带宽；不支持 requestIdleCallback 时退化成定时器 */
+function whenIdle(fn: () => void): void {
+  const ric = (
+    window as unknown as {
+      requestIdleCallback?: (cb: () => void, opts?: { timeout: number }) => void;
     }
-  } catch {
-    /* 非法 URL 兜底：原样返回 */
-  }
-  return url;
+  ).requestIdleCallback;
+  if (typeof ric === "function") ric(fn, { timeout: IDLE_TIMEOUT });
+  else window.setTimeout(fn, 800);
 }
 
-/**
- * 必应接口的 startdate（"20260901"）→ 日期戳 "2026-09-01"（**美西日历日**，见下）。
- * 必须是字符串切分而非 Date 解析：new Date("2026-09-01") 按 UTC 处理，
- * 东八区以西会整体退一天，日期就对不上了。
- */
+// --- 日期本地化 -----------------------------------------------------------
+// 必应的 startdate 是**美国太平洋时间**的日历日，与请求的 mkt 无关。而本扩展按
+// **用户本地午夜**算「今天」——两套日历错开，东八区每天 00:00～15:00 拿到的
+// 「今日壁纸」都顶着昨天的日期，与页面按本地时间渲染的日期差一天。
+// 修正：以 pool[0] 对齐本地当天为准，池内其余图按同一偏移量平移。
+
+/** 必应接口的 startdate（"20260901"）→ "2026-09-01"（字符串切分，避免时区漂移） */
 function parseBingDate(raw?: string): string {
   if (raw && /^\d{8}$/.test(raw)) {
     return `${raw.slice(0, 4)}-${raw.slice(4, 6)}-${raw.slice(6, 8)}`;
   }
   return "";
 }
-
-// --- 日期本地化 -----------------------------------------------------------
-// 必应的 startdate 是**美国太平洋时间**的日历日，与请求的 mkt 无关：同一时刻对
-// zh-CN / en-US / ja-JP / en-GB / en-AU / en-IN / de-DE 请求，idx=0 的 startdate
-// 全部相同，等于当时的美西日期。而本扩展是在**用户本地午夜**换每日一图——两套日历
-// 错开，东八区在每天 00:00～15:00（夏令时）拿到的「今日壁纸」都顶着昨天的日期，
-// 与页面顶部按本地时间渲染的日期差一天。
-//
-// 修正：把整个图池的日期统一平移到用户本地日历——以 pool[0] 对齐本地当天为准，
-// 池内其余图按同一偏移量平移（图与图之间的相对天数不变）。于是「今天展示的壁纸
-// = 今天的日期」，下载文件名、收藏、画廊也都自洽。
 
 /** "2026-09-01" → UTC 毫秒。纯日历日换算，避开本地时区与夏令时导致的 ±1 天漂移 */
 function dayStampToUTC(day: string): number | null {
@@ -141,9 +134,8 @@ function dayDiff(from: string, to: string): number | null {
 
 /**
  * 把必应图池的日期整体平移到用户本地日历（幂等：head 已对齐本地当天时原样返回）。
- * 偏移量只允许 -1 / 0 / +1：必应日期与本地日期最多差一天（美西与本地的时差不足
- * 两天）。超出范围说明图池已严重过期（如断网数日）或数据异常——此时宁可不平移，
- * 也绝不把一张老图的日期硬改成今天。
+ * 偏移量只允许 -1 / 0 / +1：必应日期与本地日期最多差一天。超出范围说明图池已严重
+ * 过期（如断网数日）或数据异常——此时宁可不平移，也绝不把一张老图的日期硬改成今天。
  */
 function localizeBingDates(images: BingImage[]): BingImage[] {
   if (!images.length) return images;
@@ -153,6 +145,8 @@ function localizeBingDates(images: BingImage[]): BingImage[] {
   if (offset === null || offset === 0 || Math.abs(offset) > 1) return images;
   return images.map((img) => (img.date ? { ...img, date: shiftDay(img.date, offset) } : img));
 }
+
+// --- 图池 -----------------------------------------------------------------
 
 async function fetchBing(mkt: string): Promise<BingImage[]> {
   const res = await fetch(bingApiUrl(mkt), { cache: "no-store" });
@@ -168,13 +162,41 @@ async function fetchBing(mkt: string): Promise<BingImage[]> {
   return (data.images || [])
     .filter((img) => img.url)
     .map((img) => ({
-      url: uhdUrl(img.url!.startsWith("http") ? img.url! : BING_BASE + img.url),
+      // 刻意用接口直接给的 1080p：约 300KB，与 Bing 搜索首页同源同尺寸。
+      // UHD（1–4MB）只用于「下载原图」，不作为展示源——背景图不值得让用户等几秒。
+      url: img.url!.startsWith("http") ? img.url! : BING_BASE + img.url,
       title: img.title ?? "",
       copyright: img.copyright ?? "",
       copyrightlink: img.copyrightlink ?? "",
       date: parseBingDate(img.startdate),
     }));
 }
+
+async function readCachedPool(locale: string): Promise<{ at: number; images: BingImage[] }> {
+  try {
+    const key = poolCacheKey(locale);
+    const res = await chrome.storage.local.get(key);
+    const e = res[key] as { at?: number; images?: BingImage[] } | undefined;
+    // 读缓存时也本地化一次：缓存可能是昨夜写的，当时算出的偏移量与现在未必相同。
+    // 本地化是幂等的，重复调用无副作用。
+    const images = localizeBingDates(
+      (e?.images ?? []).filter((i): i is BingImage => !!i && typeof i.url === "string")
+    );
+    return { at: typeof e?.at === "number" ? e.at : 0, images };
+  } catch {
+    return { at: 0, images: [] };
+  }
+}
+
+async function writeCachedPool(locale: string, images: BingImage[]): Promise<void> {
+  try {
+    await chrome.storage.local.set({ [poolCacheKey(locale)]: { at: Date.now(), images } });
+  } catch {
+    /* 写缓存失败不影响展示 */
+  }
+}
+
+// --- 快照 -----------------------------------------------------------------
 
 function snapFromBing(img: BingImage): WallpaperCurrent {
   return {
@@ -206,101 +228,39 @@ function snapFromSaved(w: SavedWallpaper): WallpaperCurrent {
   };
 }
 
+// --- 选图规则 -------------------------------------------------------------
+
 /**
- * 按模式从对应池子里**顺序**挑下一张（循环推进；无可选时返回 null）。
- * 顺序切换比随机更可预期：用户连续点「换一张」能遍历完整个池子并回到起点。
- * 当前图不在池中（如刚跨天换了今日图）时从池头开始。
+ * 必应图库里当前图之后的那一张（循环推进，不是随机——连点「换一张」能走完一圈回到起点）。
+ * 壁纸来源永远是必应图库：当前图若是钉选的收藏（不在图池里），则跳回图池头图，
+ * 重新进入必应轮换。池内只有当前这一张时返回 null（无需切换）。
  */
 function pickNext(
-  mode: WallpaperSettings["mode"],
   pool: BingImage[],
-  collection: SavedWallpaper[],
   currentKey: string | null
 ): WallpaperCurrent | null {
-  type Cand = { cid: string; snap: () => WallpaperCurrent };
-  let cands: Cand[] = [];
-  if (mode === "collection") {
-    cands = collection.map((w) => ({
-      cid: canonicalWallpaperId(w.url),
-      snap: () => snapFromSaved(w),
-    }));
-  } else if (mode === "shuffle-all") {
-    // 同一张图可能同时在必应池与收藏池（url 串不同但归一 id 相同），按归一 id 去重
-    const collCands = collection.map((w) => ({
-      cid: canonicalWallpaperId(w.url),
-      snap: () => snapFromSaved(w),
-    }));
-    const collIds = new Set(collCands.map((c) => c.cid));
-    const bingCands = pool
-      .map((img) => ({ cid: canonicalWallpaperId(img.url), snap: () => snapFromBing(img) }))
-      .filter((c) => !collIds.has(c.cid));
-    cands = [...bingCands, ...collCands];
-  } else {
-    cands = pool.map((img) => ({
-      cid: canonicalWallpaperId(img.url),
-      snap: () => snapFromBing(img),
-    }));
-  }
-  if (cands.length === 0) return null;
-  const idx = cands.findIndex((c) => c.cid === currentKey);
-  const next = cands[(idx + 1 + cands.length) % cands.length];
-  // 池子里只有当前这张时无事可做，避免原地重复 commit
-  if (next.cid === currentKey) return null;
+  if (!pool.length) return null;
+  const cands = pool.map((img) => ({
+    key: canonicalWallpaperId(img.url),
+    snap: () => snapFromBing(img),
+  }));
+  const idx = cands.findIndex((c) => c.key === currentKey);
+  const next = cands[(idx + 1) % cands.length];
+  if (next.key === currentKey) return null; // 池里只有当前这张
   return next.snap();
 }
 
-/**
- * 首屏指针决策（在任何图片呈现之前执行一次）：
- * - 有快照：原样沿用，绝不在「打开/重载」时因轮换间隔已到而换图（否则被 Chrome 丢弃后台
- *   标签页后重载，会因 stored.setAt 过旧而每次回来都换一张，体验极差）。轮换只在页面持续
- *   打开、用户正在观看时由页内计时器推进。唯一例外：跨天且缓存是**今天写的**（pool[0]
- *   可信为今日图）时，在首帧渲染前直接换成当日新图——发生在绘制前，用户看不到任何切换。
- * - 无快照（首次使用 / v1 迁移）：按模式取默认第一张。
- *
- * 跨天换图的坑：首屏决策用的是**缓存图池**（bing-cache-*）。只有「今天写过」的缓存，
- * pool[0] 才是今日图——昨夜 23:50 写的缓存即使没过 30 分钟 TTL，pool[0] 也还是昨天的图，
- * 此时若把它当作今日图提交并盖上今天的 dayStamp，当日真图就永远进不来了。所以这里只信
- * cacheIsToday；缓存不可信时保持旧快照（dayStamp 不变），等新池到达后由 deferDailyUpdate
- * 静默把指针就绪到今日图，下次打开直接呈现。
- */
-function resolveInitial(
-  sett: WallpaperSettings,
-  collection: SavedWallpaper[],
-  pool: BingImage[],
-  stored: WallpaperCurrent | null,
-  cacheIsToday: boolean
-): WallpaperCurrent | null {
-  if (stored) {
-    // 历史快照里的 date 是未经本地化的必应发布日（比本地日期少一天）。图池里能找到
-    // 同一张图时，用本地化后的日期纠正过来——自愈一次，不必等到明天换图才对上。
-    let base = stored;
-    if (base.kind === "bing" && pool.length) {
-      const hit = pool.find((img) => canonicalWallpaperId(img.url) === base.key);
-      if (hit?.date && hit.date !== base.date) base = { ...base, date: hit.date };
-    }
-    // 打开/重载时不因「轮换间隔已到」换图：轮换计时不再依赖 stored.setAt（旧时间戳曾在
-    // 回来瞬间误触发轮换），改由底部 rotation effect 按「页面可见时长」累计推进。
-    if (sett.mode === "bing-daily" && base.dayStamp !== todayStamp()) {
-      if (cacheIsToday && pool[0]) {
-        const cid = canonicalWallpaperId(pool[0].url);
-        if (cid !== base.key) return snapFromBing(pool[0]);
-        return { ...base, dayStamp: todayStamp() };
-      }
-      // 缓存不可信：保持旧图（dayStamp 不变），交给 deferDailyUpdate 静默就绪
-      return base;
-    }
-    return base;
-  }
-  if (sett.mode === "collection" && collection[0]) return snapFromSaved(collection[0]);
-  if (pool[0]) return snapFromBing(pool[0]);
-  if (collection[0]) return snapFromSaved(collection[0]);
-  return null;
-}
+// --- Hook -----------------------------------------------------------------
 
 export interface WallpaperApi {
   settings: WallpaperSettings | null;
   collection: SavedWallpaper[];
-  current: WallpaperCurrent | null;
+  /** 当前展示的壁纸（不变量：字节已在本地图库，且全局唯一） */
+  displayed: WallpaperCurrent | null;
+  /** 可直接交给 <img src> 的展示地址（本地 blob 或远程地址） */
+  displayUrl: string;
+  /** 是否正在为「用户发起的切换」预载（底栏可显示 loading） */
+  switching: boolean;
   liked: boolean;
   advance: () => void;
   toggleLike: () => Promise<{ liked: boolean } | null>;
@@ -312,128 +272,223 @@ export function useWallpaper(locale: string): WallpaperApi {
   const [pool, setPool] = React.useState<BingImage[]>([]);
   const [collection, setCollection] = React.useState<SavedWallpaper[]>([]);
   const [settings, setSettings] = React.useState<WallpaperSettings | null>(null);
-  const [current, setCurrent] = React.useState<WallpaperCurrent | null>(null);
-  const initedRef = React.useRef(false);
+  const [displayed, setDisplayed] = React.useState<WallpaperCurrent | null>(null);
+  const [displayUrl, setDisplayUrl] = React.useState("");
+  const [switching, setSwitching] = React.useState(false);
 
-  // 页面可见性：切到后台（或被 Chrome 内存节省丢弃重载）时置 false。
-  // 自动轮换只在可见时计时，后台逗留不计入轮换时长，回来看到的就是离开时的那张。
+  // 页面可见性：自动轮换只在可见时计时，后台逗留不计入——
+  // 切回标签页不会因后台流逝的时间而在回来瞬间换图。
   const [visible, setVisible] = React.useState(
     typeof document === "undefined" ? true : document.visibilityState !== "hidden"
   );
   React.useEffect(() => {
-    const onVis = () => setVisible(document.visibilityState !== "hidden");
+    const onVis = () => {
+      const v = document.visibilityState !== "hidden";
+      setVisible(v);
+      if (v) void refreshRef.current?.(false); // 回到前台顺带看一眼图池是否更新了
+    };
     document.addEventListener("visibilitychange", onVis);
     return () => document.removeEventListener("visibilitychange", onVis);
   }, []);
 
-  // 异步回调中取最新值用（避免闭包吃到过期 state）
+  // 异步回调取最新值用（避免闭包吃到过期 state）
+  const localeRef = React.useRef(locale);
+  localeRef.current = locale;
   const poolRef = React.useRef(pool);
   poolRef.current = pool;
   const collRef = React.useRef(collection);
   collRef.current = collection;
   const settRef = React.useRef(settings);
   settRef.current = settings;
-  const curRef = React.useRef(current);
-  curRef.current = current;
+  const displayedRef = React.useRef(displayed);
+  displayedRef.current = displayed;
 
-  const commit = React.useCallback((next: WallpaperCurrent) => {
-    setCurrent(next);
-    void saveWallpaperCurrent(next);
-  }, []);
+  const initedRef = React.useRef(false);
+  const preloadingRef = React.useRef(false);
+  const preloadRef = React.useRef<() => Promise<void>>(async () => {});
+  const rotateRef = React.useRef<() => void>(() => {});
+  const refreshRef = React.useRef<(force: boolean) => Promise<void>>(async () => {});
+  /** 初始化完成的闸门：图池刷新必须等它，否则会误判成首次安装 */
+  const readyRef = React.useRef<Promise<void>>(Promise.resolve());
 
   /**
-   * 新图池就绪后的唯一「被动换图」规则（每日一图跨天）——静默就绪，不当面换图：
-   * - 指针只落盘（saveWallpaperCurrent），不改渲染 state：当前页继续显示旧图；
-   * - saveWallpaperBackdrop 预生成新图的首屏兜底缩略图，其内部以 force-cache 拉取
-   *   原图，顺带把新图预热进 HTTP 缓存；
-   * - 于是下次打开：boot.js 首帧就是新图的模糊兜底 → React 呈现清晰新图，
-   *   全程没有「打开后当着用户面换壁纸」的动画，也没有下载等待。
+   * 首帧兜底图（boot.js 在首帧前画的那张 32px 模糊图）必须与当前展示的图一致，
+   * 否则首帧会出现「模糊的是 A、清晰后是 B」的错配。
    */
-  const deferDailyUpdate = React.useCallback((freshPool: BingImage[]) => {
-    const sett = settRef.current;
-    const cur = curRef.current;
-    if (!sett || !cur || sett.mode !== "bing-daily") return;
-    const today = todayStamp();
-    if (cur.dayStamp === today) return;
-    const img = freshPool[0];
-    if (!img) return;
-    if (canonicalWallpaperId(img.url) === cur.key) {
-      // 同一张图：只补盖今天的日期戳（并顺手纠正历史快照里未本地化的日期），阻止后续重复判定
-      void saveWallpaperCurrent({ ...cur, dayStamp: today, date: img.date || cur.date });
-      return;
-    }
-    const next = snapFromBing(img);
-    void saveWallpaperCurrent(next);
-    void saveWallpaperBackdrop(next.url);
+  const syncBackdrop = React.useCallback((target: WallpaperCurrent | null) => {
+    if (!target) return;
+    // 模糊兜底 + 完整清晰图 dataURL 一并落 localStorage：
+    // 下次打开首帧由 boot.js 直接画清晰图，瞬时上屏，不再先糊后清。
+    void saveWallpaperBackdrop(target.url, target.key);
+    void saveDisplayedImage(target.key);
   }, []);
 
-  // 初始化：一次性并行读齐所有存储，在呈现任何图片之前完成首屏指针决策。
-  // 网络请求不阻塞首屏——先用缓存图池决策，新池到达后仅按「跨天静默就绪」规则处理。
-  React.useEffect(() => {
-    let alive = true;
-    const mkt = mktForLocale(locale);
-    const cacheKey = `bing-cache-${locale}`;
-    (async () => {
-      const [coll, sett, stored, cacheRes] = await Promise.all([
-        loadCollection(),
-        loadWallpaperSettings(),
-        loadWallpaperCurrent(),
-        chrome.storage.local.get(cacheKey),
-      ]);
-      if (!alive) return;
-      const entry = cacheRes[cacheKey] as { at: number; images: BingImage[] } | undefined;
-      // 读缓存时也本地化一次：缓存可能是昨夜 / 半小时前写的，当时算出的偏移量与
-      // 现在未必相同（跨过美西或本地午夜都会变）。本地化是幂等的，重复调用无副作用。
-      const cachedPool = localizeBingDates(entry?.images ?? []);
-      // 缓存是否「今天写过」（且未过 30 分钟 TTL）：只有今天写的缓存，pool[0] 才可信为
-      // 今日图，跨天首屏决策可直接采用；昨夜或更早的缓存一律等新池到达后静默就绪。
-      const cacheIsToday =
-        !!entry && Date.now() - entry.at <= CACHE_TTL && dayStampOf(entry.at) === todayStamp();
+  /** 提交为当前展示图（调用方须保证字节已在本地） */
+  const commit = React.useCallback(
+    (next: WallpaperCurrent) => {
+      displayedRef.current = next;
+      setDisplayed(next);
+      void saveWallpaperCurrent(next);
+      void syncBackdrop(next);
+      whenIdle(() => void preloadRef.current?.());
+    },
+    [syncBackdrop]
+  );
 
-      setCollection(coll);
-      setSettings(sett);
-      setPool(cachedPool);
+  /**
+   * 后台预热下一张：**只下载字节到本地图库，不动任何指针**。
+   * 于是轮换到点或用户点「换一张」时，字节已就位，切换是瞬时的；
+   * 而「当前是哪张」始终只有 displayed 一个答案，多标签页必然一致。
+   */
+  const preload = React.useCallback(async () => {
+    const sett = settRef.current;
+    const disp = displayedRef.current;
+    if (!sett || !disp || preloadingRef.current) return;
+    const next = pickNext(poolRef.current, disp.key);
+    if (!next) return;
+    preloadingRef.current = true;
+    try {
+      await cacheWallpaper(next.url, next.key);
+    } finally {
+      preloadingRef.current = false;
+    }
+  }, []);
+  preloadRef.current = preload;
 
-      const initial = resolveInitial(sett, coll, cachedPool, stored, cacheIsToday);
-      if (initial) {
-        // 直接沿用首屏决策结果；轮换计时不再依赖 stored.setAt（旧时间戳曾在回来瞬间误触发
-        // 轮换），改由底部 rotation effect 按「页面可见时长」累计推进。
-        setCurrent(initial);
-        if (initial !== stored) void saveWallpaperCurrent(initial);
-      }
-      initedRef.current = true;
-
-      if (!entry || Date.now() - entry.at > CACHE_TTL) {
+  /**
+   * 切到指定图（用户操作 / 轮换到点 / 首次安装）。
+   * 字节不在本地时**先在后台下载，画面保持不动**，下完再切——
+   * 这样绝不会出现「底栏信息先变、图片几秒后才跟上」的错位。
+   */
+  const switchTo = React.useCallback(
+    async (target: WallpaperCurrent | null) => {
+      if (!target) return false;
+      if (displayedRef.current?.key === target.key) return true;
+      if (!(await hasWallpaper(target.key))) {
+        setSwitching(true);
         try {
-          // 必应给的是美西日期，统一平移到用户本地日历后再缓存 / 落盘
-          const fresh = localizeBingDates(await fetchBing(mkt));
-          if (!fresh.length || !alive) return;
-          await chrome.storage.local.set({ [cacheKey]: { at: Date.now(), images: fresh } });
-          if (!alive) return;
-          setPool(fresh);
-          if (!curRef.current) {
-            // 首次使用且当时无缓存：用新池补建指针
-            const sett2 = settRef.current;
-            const built = sett2
-              ? resolveInitial(sett2, collRef.current, fresh, null, true)
-              : null;
-            if (built) commit(built);
-          } else {
-            deferDailyUpdate(fresh);
+          const ok = await cacheWallpaper(target.url, target.key);
+          if (!ok) return false;
+        } finally {
+          setSwitching(false);
+        }
+      }
+      if (displayedRef.current?.key === target.key) return true; // 期间已被换过
+      commit(target);
+      return true;
+    },
+    [commit]
+  );
+
+  /** 轮换到点 / 点「换一张」：字节通常已由 preload 下好，所以是秒切 */
+  const advanceToNext = React.useCallback(() => {
+    const sett = settRef.current;
+    const disp = displayedRef.current;
+    if (!sett || !disp) return;
+    const next = pickNext(poolRef.current, disp.key);
+    if (!next) return;
+    void switchTo(next);
+  }, [switchTo]);
+  rotateRef.current = advanceToNext;
+
+  /** 刷新图池；必要时用首图建立首次安装的第一张 */
+  const refreshPool = React.useCallback(
+    async (force: boolean) => {
+      const loc = localeRef.current;
+      const cached = await readCachedPool(loc);
+      setPool(cached.images);
+      let fresh = cached.images;
+
+      const stale = force || !cached.at || Date.now() - cached.at > BING_CACHE_TTL;
+      if (stale) {
+        try {
+          // 必应给的是美西日期，统一平移到用户本地日历后再缓存
+          const got = localizeBingDates(await fetchBing(mktForLocale(loc)));
+          if (got.length) {
+            await writeCachedPool(loc, got);
+            setPool(got);
+            fresh = got;
           }
         } catch {
-          /* 网络异常：保留缓存池 / 当前快照，展示不受影响 */
+          /* 网络异常：保留缓存池，展示不受影响 */
         }
+      }
+
+      // 首次安装（还没有任何壁纸）：用图池头图建立第一张，这是唯一一次必须等网络
+      if (!displayedRef.current && fresh.length) {
+        await switchTo(snapFromBing(fresh[0]));
+        return;
+      }
+      whenIdle(() => void preloadRef.current?.());
+    },
+    [switchTo]
+  );
+  refreshRef.current = refreshPool;
+
+  // 初始化：一次性读齐所有存储，在呈现任何图片之前定下展示指针。
+  React.useEffect(() => {
+    let alive = true;
+    let markReady: () => void = () => {};
+    readyRef.current = new Promise<void>((r) => {
+      markReady = r;
+    });
+    void (async () => {
+      try {
+        const [coll, sett, disp, cached] = await Promise.all([
+          loadCollection(),
+          loadWallpaperSettings(),
+          loadWallpaperCurrent(),
+          readCachedPool(localeRef.current),
+        ]);
+        if (!alive) return;
+        setCollection(coll);
+        setSettings(sett);
+        setPool(cached.images);
+
+        // 有指针就原样沿用——**绝不在打开时做任何替换**，
+        // 这是「多开几个标签页看到的是同一张」的根本保证。
+        displayedRef.current = disp;
+        setDisplayed(disp);
+        initedRef.current = true;
+        void syncBackdrop(disp);
+
+        // 首次安装且图池缓存是今天写的：直接用它建图，省掉一次串行等待
+        if (!disp && cached.images.length && cached.at) {
+          const sameDay =
+            new Date(cached.at).toDateString() === new Date().toDateString();
+          if (sameDay) await switchTo(snapFromBing(cached.images[0]));
+        }
+      } finally {
+        markReady();
       }
     })();
     return () => {
       alive = false;
     };
-    // locale 变化时重跑：只会换图池与文案来源；current 渲染自快照，不受影响。
-  }, [locale, commit, deferDailyUpdate]);
+  }, [syncBackdrop, switchTo]);
+
+  // 图池刷新：挂载时一次，切换界面语言时一次（语言只换图池与文案来源，不换当前图）
+  React.useEffect(() => {
+    let alive = true;
+    void (async () => {
+      await readyRef.current; // 等初始化决策，避免把已有壁纸误判成首次安装
+      if (!alive) return;
+      await refreshPool(false);
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [locale, refreshPool]);
+
+  // 页面长期开着时定期回看图池，让当天的新图有机会进入轮换
+  React.useEffect(() => {
+    const id = window.setInterval(() => void refreshRef.current?.(false), POLL_INTERVAL);
+    return () => window.clearInterval(id);
+  }, []);
 
   // 多标签页 / 设置面板同步：只同步收藏与设置。
-  // 刻意不同步 wallpaper-current——另一个标签页「换一张」不应让本页背景突然变化。
+  // 刻意不同步 displayed——另一个标签页「换一张」不应让本页背景突然变化；
+  // 新开的标签页会读到最新的 displayed，那时才跟进。
   React.useEffect(() => {
     const onChange = (
       changes: Record<string, chrome.storage.StorageChange>,
@@ -458,106 +513,90 @@ export function useWallpaper(locale: string): WallpaperApi {
     return () => chrome.storage.onChanged.removeListener(onChange);
   }, []);
 
-  // 模式切换（设置面板）是用户主动操作，立即生效是符合预期的变化：
-  // - 切到「我的收藏」：当前图不在收藏中时，换成收藏里的对应图 / 第一张；
-  // - 切到「每日一图」：当前图不是必应图时，换成今日图；
-  // - 切到「随机」：不动，保持当前图，仅影响后续「换一张」的池子。
-  // 例外：程序性回退（收藏被清空时自动切回 bing-daily）不视为用户操作，
-  // 由 suppressModeEffectRef 抑制一次，保证「取消收藏不换当前图」的承诺成立。
-  const prevModeRef = React.useRef<WallpaperSettings["mode"] | null>(null);
-  const suppressModeEffectRef = React.useRef(false);
+  // 展示地址：本地图库命中 → blob（毫秒级上屏）；未命中 → 远程地址（首次安装等网络）
   React.useEffect(() => {
-    const mode = settings?.mode;
-    if (!mode) return;
-    const prev = prevModeRef.current;
-    prevModeRef.current = mode;
-    if (suppressModeEffectRef.current) {
-      suppressModeEffectRef.current = false;
+    const d = displayed;
+    if (!d) {
+      setDisplayUrl("");
       return;
     }
-    if (!initedRef.current || prev === null || prev === mode) return;
-    const cur = curRef.current;
-    if (mode === "collection") {
-      if (cur?.kind !== "collection") {
-        const w =
-          collRef.current.find((x) => canonicalWallpaperId(x.url) === cur?.key) ??
-          collRef.current[0];
-        if (w) commit(snapFromSaved(w));
+    let cancelled = false;
+    let created: string | null = null;
+    void (async () => {
+      const res = await resolveWallpaperUrl(d.url, d.key);
+      if (cancelled) {
+        if (res.isBlob) URL.revokeObjectURL(res.url);
+        return;
       }
-    } else if (mode === "bing-daily") {
-      if (cur?.kind !== "bing") {
-        const img = poolRef.current[0];
-        if (img) commit(snapFromBing(img));
-      }
-    }
-  }, [settings?.mode, commit]);
+      created = res.isBlob ? res.url : null;
+      setDisplayUrl(res.url);
+    })();
+    return () => {
+      cancelled = true;
+      const u = created;
+      // 延后释放：交叉淡入期间旧图仍在渲染，立刻 revoke 会让旧图变空白
+      if (u) window.setTimeout(() => URL.revokeObjectURL(u), REVOKE_DELAY);
+    };
+  }, [displayed]);
 
-  // 换一张：按模式在对应池子里随机选一张不同的
-  const advance = React.useCallback(() => {
-    const sett = settRef.current;
-    const cur = curRef.current;
-    if (!sett) return;
-    const next = pickNext(sett.mode, poolRef.current, collRef.current, cur?.key ?? null);
-    if (next) commit(next);
-  }, [commit]);
+  // 收藏变化后重新预热下一张（钉选的图被改动了，下一张是谁也跟着变）
+  React.useEffect(() => {
+    if (!initedRef.current || !displayedRef.current) return;
+    whenIdle(() => void preloadRef.current?.());
+  }, [collection]);
 
   // 自动轮换：只按「页面可见时长」推进，后台逗留不计入。
-  // rotateAccumRef 累计本轮已可见的毫秒数；rotateStartRef 记录本轮可见计时的墙钟起点。
-  // 切到后台时把已可见片段并入 accum 并暂停；切回时从「剩余时长」继续，绝不因后台流逝的
-  // 时间在回来的瞬间立即换图。计时器**自我续排**：到点换图后无论 commit 是否真正改变了
-  // current（advance 可能空转：池子为空 / 池中只有当前一张），都会排下一个整段计时器，
-  // 绝不让轮换因一次空转而永久停摆。
-  const rotateAccumRef = React.useRef(0);
-  const rotateStartRef = React.useRef<number | null>(null);
+  // 计时器自我续排：到点后无论是否真的换了图（可能池内只有一张），都排下一段。
+  const elapsedRef = React.useRef(0);
+  const startedRef = React.useRef<number | null>(null);
   React.useEffect(() => {
-    if (!settings?.autoRotate || !current || !visible) return;
+    if (!settings?.autoRotate) {
+      elapsedRef.current = 0;
+      startedRef.current = null;
+      return;
+    }
+    if (!visible) return;
     const intervalMs = Math.max(1, settings.rotateIntervalMin) * 60 * 1000;
-    if (rotateStartRef.current == null) rotateStartRef.current = Date.now();
+    if (startedRef.current == null) startedRef.current = Date.now();
     let id = 0;
     const schedule = () => {
-      const remaining = Math.max(0, intervalMs - rotateAccumRef.current);
+      const remaining = Math.max(500, intervalMs - elapsedRef.current);
       id = window.setTimeout(() => {
-        rotateAccumRef.current = 0;
-        rotateStartRef.current = Date.now();
-        advance();
+        elapsedRef.current = 0;
+        startedRef.current = Date.now();
+        rotateRef.current?.();
         schedule();
       }, remaining);
     };
     schedule();
     return () => {
       window.clearTimeout(id);
-      if (rotateStartRef.current != null) {
-        rotateAccumRef.current += Date.now() - rotateStartRef.current;
-        rotateStartRef.current = null;
+      if (startedRef.current != null) {
+        elapsedRef.current += Date.now() - startedRef.current;
+        startedRef.current = null;
       }
     };
-  }, [settings?.autoRotate, settings?.rotateIntervalMin, visible, advance, current]);
+  }, [settings?.autoRotate, settings?.rotateIntervalMin, visible]);
 
   // 已收藏判定：按归一化 id 比对（跨语言 / 跨分辨率一致）
   const liked =
-    !!current && collection.some((w) => canonicalWallpaperId(w.url) === current.key);
+    !!displayed && collection.some((w) => canonicalWallpaperId(w.url) === displayed.key);
+
+  // 换一张：字节通常已预热好，是秒切；没预热就先下载，画面保持不动
+  const advance = advanceToNext;
 
   // 防止快速连点 / 并发重复入库
   const likePendingRef = React.useRef(false);
   const toggleLike = React.useCallback(async (): Promise<{ liked: boolean } | null> => {
-    const cur = curRef.current;
+    const cur = displayedRef.current;
     if (!cur || likePendingRef.current) return null;
     likePendingRef.current = true;
     try {
-      const existing = collRef.current.find(
-        (w) => canonicalWallpaperId(w.url) === cur.key
-      );
+      const existing = collRef.current.find((w) => canonicalWallpaperId(w.url) === cur.key);
       if (existing) {
+        // 取消收藏不切换当前展示的图（字节仍在本地，画面照常）。
         const next = await removeFromCollection(existing.id);
         setCollection(next);
-        // 取消收藏不切换当前展示的图（快照仍可渲染）；
-        // 若收藏被清空且模式为收藏，回退为每日一图，展示图保持不动
-        // （抑制模式切换 effect 的联动换图）。
-        if (next.length === 0 && settRef.current?.mode === "collection") {
-          suppressModeEffectRef.current = true;
-          const s = await saveWallpaperSettings({ mode: "bing-daily" });
-          setSettings(s);
-        }
         return { liked: false };
       }
       const thumb = await generateThumb(cur.url);
@@ -581,42 +620,30 @@ export function useWallpaper(locale: string): WallpaperApi {
     (id: string) => {
       const w = collRef.current.find((x) => x.id === id);
       if (!w) return;
-      commit(snapFromSaved(w));
-      void saveWallpaperSettings({ mode: "collection" }).then(setSettings);
+      void (async () => {
+        // 选中收藏 = 钉住这张图并关闭自动轮换（其余时间壁纸始终来自必应图库）
+        const s = settRef.current;
+        if (s && s.autoRotate) {
+          setSettings(await saveWallpaperSettings({ autoRotate: false }));
+        }
+        await switchTo(snapFromSaved(w));
+      })();
     },
-    [commit]
+    [switchTo]
   );
 
-  const removeFromGallery = React.useCallback(
-    (id: string) => {
-      void removeFromCollection(id).then(async (next) => {
-        setCollection(next);
-        const cur = curRef.current;
-        const sett = settRef.current;
-        if (!sett) return;
-        if (next.length === 0) {
-          // 收藏清空：模式回退每日一图；当前展示的图不动（快照仍可渲染，
-          // 抑制模式切换 effect 的联动换图）
-          if (sett.mode === "collection") {
-            suppressModeEffectRef.current = true;
-            const s = await saveWallpaperSettings({ mode: "bing-daily" });
-            setSettings(s);
-          }
-          return;
-        }
-        // 删的是当前展示图且处于收藏模式：平滑切到收藏里的下一张
-        if (sett.mode === "collection" && cur?.collectionId === id) {
-          commit(snapFromSaved(next[0]));
-        }
-      });
-    },
-    [commit]
-  );
+  const removeFromGallery = React.useCallback((id: string) => {
+    void removeFromCollection(id).then((next) => {
+      setCollection(next);
+    });
+  }, []);
 
   return {
     settings,
     collection,
-    current,
+    displayed,
+    displayUrl,
+    switching,
     liked,
     advance,
     toggleLike,

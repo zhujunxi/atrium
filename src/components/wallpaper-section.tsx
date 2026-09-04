@@ -2,23 +2,16 @@
 
 import * as React from "react";
 import { useI18n } from "@/lib/i18n";
-import { SegmentedControl, type SegmentedOption } from "@/components/ui/segmented-control";
-import type { TranslationKey } from "@/lib/i18n/types";
 import {
   loadWallpaperSettings,
   saveWallpaperSettings,
 } from "@/lib/wallpaper-store";
-import type { WallpaperMode, WallpaperSettings } from "@/lib/types";
-
-const MODES: { key: WallpaperMode; labelKey: TranslationKey }[] = [
-  { key: "bing-daily", labelKey: "settings.wallpaperDaily" },
-  { key: "collection", labelKey: "settings.wallpaperCollection" },
-  { key: "shuffle-all", labelKey: "settings.wallpaperShuffleAll" },
-];
+import type { WallpaperSettings } from "@/lib/types";
 
 const INTERVALS = [5, 15, 30, 60];
 
-/** 设置面板中的「壁纸」分区：模式三选一 + 自动轮换 + 间隔 */
+/** 设置面板中的「壁纸」分区：自动轮换 + 间隔 + 压暗蒙版。
+ *  壁纸来源始终是必应图库，无需选择；「我的收藏」只是可钉选的图库。 */
 export function WallpaperSection() {
   const { t } = useI18n();
   const [settings, setSettings] = React.useState<WallpaperSettings | null>(null);
@@ -56,14 +49,6 @@ export function WallpaperSection() {
       <p className="px-2 pb-1.5 text-[11px] font-medium uppercase tracking-wide text-white/55">
         {t("settings.wallpaper")}
       </p>
-      <SegmentedControl
-        ariaLabel={t("settings.wallpaper")}
-        value={settings.mode}
-        onChange={(k) => update({ mode: k })}
-        options={
-          MODES.map((m) => ({ key: m.key, label: t(m.labelKey) })) as SegmentedOption<WallpaperMode>[]
-        }
-      />
 
       <button
         type="button"
@@ -112,7 +97,6 @@ export function WallpaperSection() {
           <span className={knobClass(settings.dimMask)} />
         </span>
       </button>
-
     </>
   );
 }

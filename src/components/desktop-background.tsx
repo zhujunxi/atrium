@@ -1,11 +1,12 @@
 "use client";
 
 import * as React from "react";
-import { Download, Heart, Images, RefreshCw } from "lucide-react";
+import { Download, Heart, Images, Loader2, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { useI18n } from "@/lib/i18n";
-import { saveWallpaperBackdrop, todayStamp } from "@/lib/wallpaper-store";
+import { todayStamp } from "@/lib/wallpaper-store";
+import { uhdUrl } from "@/lib/wallpaper-cache";
 import { formatDayStamp } from "@/lib/utils";
 import { useWallpaper } from "@/lib/use-wallpaper";
 import { WallpaperGallery } from "@/components/wallpaper-gallery";
@@ -14,22 +15,6 @@ import { readEntrance } from "@/lib/store";
 /** localStorage 读取「开启动效」开关（与 nav:engine 同机制，同步读出、不闪首屏） */
 export function entranceEnabled(): boolean {
   return readEntrance();
-}
-
-/** UHD 源加载失败时的 1080p 回退地址（少数老必应图没有 _UHD 变体） */
-function loResFallback(url: string): string | null {
-  try {
-    const u = new URL(url);
-    const id = u.searchParams.get("id");
-    if (id && id.includes("_UHD.")) {
-      return `${u.origin}${u.pathname}?id=${encodeURIComponent(
-        id.replace(/_UHD\./, "_1920x1080.")
-      )}`;
-    }
-  } catch {
-    /* 非法 URL：无回退 */
-  }
-  return null;
 }
 
 /**
@@ -46,10 +31,15 @@ function wallpaperDateStamp(
 
 /**
  * 桌面壁纸（纯渲染层）。
- * 产品逻辑（图池获取、指针决策、轮换、收藏）全部在 useWallpaper 中：
- * 打开新标签页永远先显示上次那张图；跨天的每日新图由 useWallpaper 在后台静默就绪
- * （指针 + 兜底缩略图 + 缓存预热），下次打开直接呈现，打开瞬间绝无换图动画；
- * 其余可预期切换（手动换一张 / 画廊选择 / 轮换到期）走 700ms 交叉淡入。
+ *
+ * 产品逻辑（图池、指针、轮换、下载、收藏）全部在 useWallpaper 里，这一层只管怎么画：
+ * - `displayUrl` 由控制器给出，字节已在本地图库，通常几十毫秒内即可解码上屏；
+ * - 首帧（还没有旧图）直接呈现，不做渐入——配合 boot.js 的模糊兜底图，
+ *   观感是「模糊 → 清晰」，全程无白屏；
+ * - 后续切换走 700ms 交叉淡入。
+ *
+ * 刻意不在这里做加载中占位或分辨率回退：控制器已经保证「能切过来的图都已下好」，
+ * 渲染层再掺入选图逻辑就是重蹈旧版「状态与画面对不上」的覆辙。
  */
 export function DesktopBackground() {
   const { t, locale } = useI18n();
@@ -57,7 +47,9 @@ export function DesktopBackground() {
   const {
     settings,
     collection,
-    current,
+    displayed,
+    displayUrl,
+    switching,
     liked,
     advance,
     toggleLike,
@@ -65,8 +57,8 @@ export function DesktopBackground() {
     removeFromGallery,
   } = useWallpaper(locale);
 
-  const [imgUrl, setImgUrl] = React.useState(""); // 当前已显示的图（始终为已加载）
-  const [next, setNext] = React.useState<{ url: string; ready: boolean } | null>(null); // 待交叉淡入的新图
+  const [shown, setShown] = React.useState(""); // 当前已呈现的图
+  const [incoming, setIncoming] = React.useState<{ url: string; ready: boolean } | null>(null); // 待交叉淡入的新图
   const [galleryOpen, setGalleryOpen] = React.useState(false);
   const barRef = React.useRef<HTMLDivElement | null>(null);
 
@@ -80,71 +72,51 @@ export function DesktopBackground() {
     return () => window.removeEventListener("pointerdown", onDown);
   }, [galleryOpen]);
 
-  // 目标图变化且不同于当前显示图时：先预加载并解码新图，像素完全就绪后再呈现。
-  // 候选按序尝试：UHD 优先，失败自动回退 1080p。
-  // - 首次加载（imgUrl 为空，无旧图兜底）：直接展示，不做渐入——避免灰底停留 + 渐入被
-  //   跳过造成的闪屏（首屏直接展示）。
-  // - 切换（imgUrl 非空，有旧图兜底）：走交叉淡入层，700ms 平滑过渡。
+  // 目标地址变化且不同于当前呈现的图时：先解码，像素完全就绪后再上屏。
+  // - 首帧（shown 为空，无旧图兜底）：直接呈现，不做渐入，避免灰底停留 + 渐入被跳过造成闪屏；
+  // - 切换（已有旧图）：走交叉淡入层，700ms 平滑过渡。
   React.useEffect(() => {
-    if (!current?.url || current.url === imgUrl) return;
+    if (!displayUrl || displayUrl === shown) return;
+    if (!shown) {
+      setShown(displayUrl);
+      return;
+    }
     let cancelled = false;
-    const candidates = [current.url, loResFallback(current.url)].filter(
-      (u): u is string => !!u
-    );
-    const show = (url: string) => {
-      if (cancelled) return;
-      if (!imgUrl) {
-        setImgUrl(url);
-        void saveWallpaperBackdrop(url);
-      } else {
-        setNext({ url, ready: false });
-      }
+    const pre = new Image();
+    pre.src = displayUrl;
+    const show = () => {
+      if (!cancelled) setIncoming({ url: displayUrl, ready: false });
     };
-    const attempt = (i: number) => {
-      if (cancelled) return;
-      if (i >= candidates.length) {
-        // 全部候选失败：不动显示层（boot.js 兜底层仍然可见）
-        if (imgUrl) setNext(null);
-        return;
-      }
-      const pre = new Image();
-      pre.src = candidates[i];
-      const ok = () => show(candidates[i]);
-      if (typeof pre.decode === "function") {
-        pre
-          .decode()
-          .then(ok)
-          .catch(() => {
-            // decode 失败：已加载但解不开的极端情况仍然展示，否则试下一个候选
-            if (pre.naturalWidth > 0) ok();
-            else attempt(i + 1);
-          });
-      } else {
-        pre.onload = ok;
-        pre.onerror = () => attempt(i + 1);
-      }
-    };
-    attempt(0);
+    if (typeof pre.decode === "function") {
+      pre
+        .decode()
+        .then(show)
+        .catch(() => {
+          if (pre.naturalWidth > 0) show(); // 解码失败但像素可用，仍然呈现
+        });
+    } else {
+      pre.onload = show;
+    }
     return () => {
       cancelled = true;
     };
-  }, [current?.url, imgUrl]);
+  }, [displayUrl, shown]);
 
-  // 淡入层挂载后，确保 opacity-0 帧已被浏览器绘制（双 rAF），再置 ready 触发 700ms 过渡。
+  // 淡入层挂载后，确保 opacity-0 帧已被浏览器绘制（双 rAF），再置 ready 触发过渡。
   // 这一帧之差决定了过渡是「生效」还是「被 React 批处理跳过、图片啪地出现」。
   React.useEffect(() => {
-    if (!next || next.ready) return;
+    if (!incoming || incoming.ready) return;
     let raf2 = 0;
     const raf1 = requestAnimationFrame(() => {
       raf2 = requestAnimationFrame(() => {
-        setNext((n) => (n ? { ...n, ready: true } : n));
+        setIncoming((n) => (n ? { ...n, ready: true } : n));
       });
     });
     return () => {
       cancelAnimationFrame(raf1);
       cancelAnimationFrame(raf2);
     };
-  }, [next?.url, next?.ready]);
+  }, [incoming?.url, incoming?.ready]);
 
   async function onToggleLike() {
     const res = await toggleLike();
@@ -152,20 +124,29 @@ export function DesktopBackground() {
     toast.success(res.liked ? t("toast.wallpaperAdded") : t("toast.wallpaperRemoved"));
   }
 
-  /** 下载原图：fetch 成 blob 再走 <a download>，绕开跨域 download 属性失效的问题 */
+  /**
+   * 下载原图：fetch 成 blob 再走 <a download>，绕开跨域 download 属性失效的问题。
+   * 下载走 UHD 4K（展示用的是 1080p，快；但用户要存图时给最高画质）。
+   */
   async function onDownload() {
-    if (!current) return;
+    if (!displayed) return;
+    // 原图未必有 UHD 变体，取不到时回退到展示用的 1080p
+    const hiRes = uhdUrl(displayed.url);
     try {
-      const res = await fetch(current.url, { cache: "force-cache" });
+      let res = await fetch(hiRes, { cache: "force-cache" });
+      if (!res.ok && hiRes !== displayed.url) {
+        res = await fetch(displayed.url, { cache: "force-cache" });
+      }
+      if (!res.ok) throw new Error("download failed");
       const blob = await res.blob();
       const objectUrl = URL.createObjectURL(blob);
       const ext =
-        /\.([a-z0-9]+)$/i.exec(new URL(current.url).pathname)?.[1] ??
+        /\.([a-z0-9]+)$/i.exec(new URL(displayed.url).pathname)?.[1] ??
         blob.type.split("/")[1] ??
         "jpg";
       // 文件名带壁纸自己的日期（必应每日一图，一天一张）：同一张图在任何时候下载
       // 名字都一致，且按文件名排序即是按日期排序。
-      const stamp = wallpaperDateStamp(current) || todayStamp();
+      const stamp = wallpaperDateStamp(displayed) || todayStamp();
       const a = document.createElement("a");
       a.href = objectUrl;
       a.download = `wallpaper-${stamp}.${ext}`;
@@ -185,10 +166,10 @@ export function DesktopBackground() {
   }
 
   // 底栏信息行：壁纸日期 + 版权说明（无日期的自定义图只显示版权）
-  const wpDate = wallpaperDateStamp(current);
+  const wpDate = wallpaperDateStamp(displayed);
   const infoLine = wpDate
-    ? `${formatDayStamp(wpDate, locale)} · ${current?.copyright || current?.title || ""}`.trim()
-    : current?.copyright || current?.title || "";
+    ? `${formatDayStamp(wpDate, locale)} · ${displayed?.copyright || displayed?.title || ""}`.trim()
+    : displayed?.copyright || displayed?.title || "";
 
   const btn =
     "group/btn relative flex h-7 w-7 cursor-pointer items-center justify-center rounded-full border border-white/15 bg-black/30 text-white/80 backdrop-blur-md transition-all duration-200 hover:scale-110 hover:bg-black/40 hover:text-white active:scale-90";
@@ -202,32 +183,30 @@ export function DesktopBackground() {
       {/* 容器刻意不设背景色：底色与刷新兜底图由 boot.js 画在 body/画布层（更底下），
           若在此加不透明背景，会在 React 挂载后、真图就绪前把画布兜底盖掉造成闪屏 */}
       <div className={cn("fixed inset-0 -z-10", animateIn && "lp-wp-enter")}>
-        {/* 刷新首屏兜底不在这里：boot.js 已在首帧前把上次壁纸的缩略图画在 body/
+        {/* 刷新首屏兜底不在这里：boot.js 已在首帧前把下次要显示的壁纸缩略图画在 body/
             画布层（本容器之下），真图 decode 完成前它一直可见，dim 遮罩同样罩得住它 */}
-        {imgUrl && (
+        {shown && (
           <img
-            src={imgUrl}
+            src={shown}
             alt=""
             draggable={false}
             className="absolute inset-0 h-full w-full select-none object-cover"
           />
         )}
-        {next && (
+        {incoming && (
           <img
-            src={next.url}
+            src={incoming.url}
             alt=""
             draggable={false}
             // 像素就绪已由外部 decode() 保证；此处仅处理加载失败兜底
-            onError={() => setNext(null)}
+            onError={() => setIncoming(null)}
             onTransitionEnd={() => {
-              setImgUrl(next.url);
-              setNext(null);
-              // 异步缓存新图的极小缩略图，作为下次刷新首屏的模糊兜底
-              void saveWallpaperBackdrop(next.url);
+              setShown(incoming.url);
+              setIncoming(null);
             }}
             className={cn(
               "absolute inset-0 h-full w-full select-none object-cover transition-opacity duration-700",
-              next.ready ? "opacity-100" : "opacity-0"
+              incoming.ready ? "opacity-100" : "opacity-0"
             )}
           />
         )}
@@ -241,7 +220,7 @@ export function DesktopBackground() {
         )}
       </div>
 
-      {current && (
+      {displayed && (
         <div ref={barRef} className="contents">
           <div className="group fixed bottom-2 right-3 z-30 flex items-center">
             {/* 悬停时向左展开版权文字，默认只显示圆形按钮 */}
@@ -286,25 +265,37 @@ export function DesktopBackground() {
               <Images className="h-3.5 w-3.5" />
             </button>
 
-            {/* 换一张（顺序循环）：常驻显示的唯一点位；hover 按钮本体时 i 切换为刷新图标 */}
+            {/* 换一张（顺序循环）：常驻显示的唯一点位；hover 按钮本体时 i 切换为刷新图标。
+                后台预载新图期间显示转圈——壁纸本身不会变，直到新图字节就绪才交叉淡入。 */}
             <button
               type="button"
               onClick={advance}
               title={t("a11y.changeWallpaper")}
               aria-label={t("a11y.changeWallpaper")}
+              aria-busy={switching}
               className={btn}
             >
-              <span className="absolute text-[15px] font-semibold leading-none transition-opacity duration-200 group-hover/btn:opacity-0">
+              <span
+                className={cn(
+                  "absolute text-[15px] font-semibold leading-none transition-opacity duration-200",
+                  switching ? "opacity-0" : "group-hover/btn:opacity-0"
+                )}
+              >
                 i
               </span>
-              <RefreshCw className="absolute h-3.5 w-3.5 rotate-180 opacity-0 transition-all duration-200 group-hover/btn:rotate-0 group-hover/btn:opacity-100" />
+              {switching ? (
+                // 后台预载新图中：转圈提示，壁纸保持不动，下完再交叉淡入
+                <Loader2 className="absolute h-3.5 w-3.5 animate-spin" aria-hidden />
+              ) : (
+                <RefreshCw className="absolute h-3.5 w-3.5 rotate-180 opacity-0 transition-all duration-200 group-hover/btn:rotate-0 group-hover/btn:opacity-100" />
+              )}
             </button>
           </div>
 
           {galleryOpen && (
             <WallpaperGallery
               items={collection}
-              currentId={current.kind === "collection" ? current.collectionId : null}
+              currentId={displayed.kind === "collection" ? displayed.collectionId : null}
               onClose={() => setGalleryOpen(false)}
               onSelect={onSelectFromGallery}
               onRemove={removeFromGallery}

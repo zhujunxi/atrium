@@ -50,12 +50,13 @@ export interface SavedWallpaper {
   date?: string;
 }
 
-/** 壁纸展示模式：每日推荐 / 我的收藏 / 混合随机 */
-export type WallpaperMode = "bing-daily" | "collection" | "shuffle-all";
-
+/**
+ * 壁纸设置。
+ * 壁纸来源始终是必应图库（Bing 每日图池）；「我的收藏」只是可钉选的图库——
+ * 选中某张收藏即钉住它并关闭自动轮换。自动轮换打开时，按间隔推进到必应图库的下一张。
+ */
 export interface WallpaperSettings {
-  mode: WallpaperMode;
-  /** 是否自动轮换 */
+  /** 是否自动轮换（按间隔推进到必应图库的下一张；关闭则定住当前这张） */
   autoRotate: boolean;
   /** 轮换间隔（分钟） */
   rotateIntervalMin: number;
@@ -69,7 +70,11 @@ export interface WallpaperSettings {
  * v1 存的是 `bingIndex` 下标，而必应接口返回的是每日滚动窗口——每天头部插入新图、
  * 整体后移一位。同一个下标隔天就解析成另一张图，导致「打开新标签页时壁纸乱换」。
  * v2 直接存「这张图是谁」的完整快照：url / 文案 / 归一化 id。渲染只依赖快照本身，
- * 不再依赖图池加载与顺序，打开新标签页永远先显示上次那张图。
+ * 不再依赖图池加载与顺序。
+ *
+ * 不变量一：**这张图的字节必定已在本地图库**——打开即可呈现，无需等网络。
+ * 不变量二：**它是全局唯一的**（所有标签页共用同一份），
+ * 所以同时开几个新标签页，看到的必然是同一张壁纸。
  */
 export interface WallpaperCurrent {
   /** 来源池：必应每日图 / 我的收藏 */
@@ -83,13 +88,12 @@ export interface WallpaperCurrent {
   copyrightlink: string;
   /** kind = collection 时对应的收藏 id */
   collectionId: string | null;
-  /** 上次设置时间（ISO），自动轮换据此判断到期 */
+  /** 上次设置时间（ISO） */
   setAt: string;
-  /** 设置当天的本地日期戳（YYYY-MM-DD），bing-daily 模式跨天更新的依据 */
+  /** 设置当天的本地日期戳（YYYY-MM-DD）；仅作记录，不参与切换判定 */
   dayStamp: string;
   /**
    * 壁纸自身的日期（YYYY-MM-DD，必应每日图的发布日）。
-   * 与 dayStamp 不同：dayStamp 是「这张图被设为当天的日期」，date 是「这张图属于哪一天」，
    * 下载文件名与底栏信息展示都以此为准；自定义收藏图没有该字段。
    */
   date?: string;

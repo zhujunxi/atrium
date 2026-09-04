@@ -88,7 +88,7 @@ function uhdUrl(url: string): string {
 }
 
 /**
- * 必应接口的 startdate（"20260901"）→ 本地日期戳 "2026-09-01"。
+ * 必应接口的 startdate（"20260901"）→ 日期戳 "2026-09-01"（**美西日历日**，见下）。
  * 必须是字符串切分而非 Date 解析：new Date("2026-09-01") 按 UTC 处理，
  * 东八区以西会整体退一天，日期就对不上了。
  */
@@ -97,6 +97,61 @@ function parseBingDate(raw?: string): string {
     return `${raw.slice(0, 4)}-${raw.slice(4, 6)}-${raw.slice(6, 8)}`;
   }
   return "";
+}
+
+// --- 日期本地化 -----------------------------------------------------------
+// 必应的 startdate 是**美国太平洋时间**的日历日，与请求的 mkt 无关：同一时刻对
+// zh-CN / en-US / ja-JP / en-GB / en-AU / en-IN / de-DE 请求，idx=0 的 startdate
+// 全部相同，等于当时的美西日期。而本扩展是在**用户本地午夜**换每日一图——两套日历
+// 错开，东八区在每天 00:00～15:00（夏令时）拿到的「今日壁纸」都顶着昨天的日期，
+// 与页面顶部按本地时间渲染的日期差一天。
+//
+// 修正：把整个图池的日期统一平移到用户本地日历——以 pool[0] 对齐本地当天为准，
+// 池内其余图按同一偏移量平移（图与图之间的相对天数不变）。于是「今天展示的壁纸
+// = 今天的日期」，下载文件名、收藏、画廊也都自洽。
+
+/** "2026-09-01" → UTC 毫秒。纯日历日换算，避开本地时区与夏令时导致的 ±1 天漂移 */
+function dayStampToUTC(day: string): number | null {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(day);
+  if (!m) return null;
+  return Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+}
+
+function utcToDayStamp(ms: number): string {
+  const d = new Date(ms);
+  const mm = String(d.getUTCMonth() + 1).padStart(2, "0");
+  const dd = String(d.getUTCDate()).padStart(2, "0");
+  return `${d.getUTCFullYear()}-${mm}-${dd}`;
+}
+
+/** 日期戳平移 n 天（n 可为负）；非法输入原样返回 */
+function shiftDay(day: string, n: number): string {
+  const ms = dayStampToUTC(day);
+  if (ms == null) return day;
+  return utcToDayStamp(ms + n * 86400000);
+}
+
+/** to - from，单位「天」；任一侧非法返回 null */
+function dayDiff(from: string, to: string): number | null {
+  const a = dayStampToUTC(from);
+  const b = dayStampToUTC(to);
+  if (a == null || b == null) return null;
+  return Math.round((b - a) / 86400000);
+}
+
+/**
+ * 把必应图池的日期整体平移到用户本地日历（幂等：head 已对齐本地当天时原样返回）。
+ * 偏移量只允许 -1 / 0 / +1：必应日期与本地日期最多差一天（美西与本地的时差不足
+ * 两天）。超出范围说明图池已严重过期（如断网数日）或数据异常——此时宁可不平移，
+ * 也绝不把一张老图的日期硬改成今天。
+ */
+function localizeBingDates(images: BingImage[]): BingImage[] {
+  if (!images.length) return images;
+  const head = images[0].date;
+  if (!head) return images;
+  const offset = dayDiff(head, todayStamp());
+  if (offset === null || offset === 0 || Math.abs(offset) > 1) return images;
+  return images.map((img) => (img.date ? { ...img, date: shiftDay(img.date, offset) } : img));
 }
 
 async function fetchBing(mkt: string): Promise<BingImage[]> {
@@ -216,18 +271,25 @@ function resolveInitial(
   cacheIsToday: boolean
 ): WallpaperCurrent | null {
   if (stored) {
+    // 历史快照里的 date 是未经本地化的必应发布日（比本地日期少一天）。图池里能找到
+    // 同一张图时，用本地化后的日期纠正过来——自愈一次，不必等到明天换图才对上。
+    let base = stored;
+    if (base.kind === "bing" && pool.length) {
+      const hit = pool.find((img) => canonicalWallpaperId(img.url) === base.key);
+      if (hit?.date && hit.date !== base.date) base = { ...base, date: hit.date };
+    }
     // 打开/重载时不因「轮换间隔已到」换图：轮换计时不再依赖 stored.setAt（旧时间戳曾在
     // 回来瞬间误触发轮换），改由底部 rotation effect 按「页面可见时长」累计推进。
-    if (sett.mode === "bing-daily" && stored.dayStamp !== todayStamp()) {
+    if (sett.mode === "bing-daily" && base.dayStamp !== todayStamp()) {
       if (cacheIsToday && pool[0]) {
         const cid = canonicalWallpaperId(pool[0].url);
-        if (cid !== stored.key) return snapFromBing(pool[0]);
-        return { ...stored, dayStamp: todayStamp() };
+        if (cid !== base.key) return snapFromBing(pool[0]);
+        return { ...base, dayStamp: todayStamp() };
       }
       // 缓存不可信：保持旧图（dayStamp 不变），交给 deferDailyUpdate 静默就绪
-      return stored;
+      return base;
     }
-    return stored;
+    return base;
   }
   if (sett.mode === "collection" && collection[0]) return snapFromSaved(collection[0]);
   if (pool[0]) return snapFromBing(pool[0]);
@@ -296,8 +358,8 @@ export function useWallpaper(locale: string): WallpaperApi {
     const img = freshPool[0];
     if (!img) return;
     if (canonicalWallpaperId(img.url) === cur.key) {
-      // 同一张图：只补盖今天的日期戳，阻止后续重复判定
-      void saveWallpaperCurrent({ ...cur, dayStamp: today });
+      // 同一张图：只补盖今天的日期戳（并顺手纠正历史快照里未本地化的日期），阻止后续重复判定
+      void saveWallpaperCurrent({ ...cur, dayStamp: today, date: img.date || cur.date });
       return;
     }
     const next = snapFromBing(img);
@@ -320,7 +382,9 @@ export function useWallpaper(locale: string): WallpaperApi {
       ]);
       if (!alive) return;
       const entry = cacheRes[cacheKey] as { at: number; images: BingImage[] } | undefined;
-      const cachedPool = entry?.images ?? [];
+      // 读缓存时也本地化一次：缓存可能是昨夜 / 半小时前写的，当时算出的偏移量与
+      // 现在未必相同（跨过美西或本地午夜都会变）。本地化是幂等的，重复调用无副作用。
+      const cachedPool = localizeBingDates(entry?.images ?? []);
       // 缓存是否「今天写过」（且未过 30 分钟 TTL）：只有今天写的缓存，pool[0] 才可信为
       // 今日图，跨天首屏决策可直接采用；昨夜或更早的缓存一律等新池到达后静默就绪。
       const cacheIsToday =
@@ -341,7 +405,8 @@ export function useWallpaper(locale: string): WallpaperApi {
 
       if (!entry || Date.now() - entry.at > CACHE_TTL) {
         try {
-          const fresh = await fetchBing(mkt);
+          // 必应给的是美西日期，统一平移到用户本地日历后再缓存 / 落盘
+          const fresh = localizeBingDates(await fetchBing(mkt));
           if (!fresh.length || !alive) return;
           await chrome.storage.local.set({ [cacheKey]: { at: Date.now(), images: fresh } });
           if (!alive) return;

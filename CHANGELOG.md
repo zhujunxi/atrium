@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- **Wallpaper date was one day behind.** Bing's `startdate` is a US-Pacific calendar day and is identical for every `mkt` (verified against zh-CN / en-US / ja-JP / en-GB / en-AU / en-IN / de-DE), while the daily image rolls over at the user's local midnight. East of UTC-7 that left today's wallpaper labelled with yesterday's date for most of the local day, contradicting the header clock. The whole image pool is now shifted onto the user's local calendar (offset derived from `pool[0]`, capped at ±1 day so a stale pool is never rewritten), for both freshly fetched and cached pools. Existing snapshots self-heal on the next open; wallpapers already saved to the collection keep the date they were saved with.
+
 ## [0.6.3] - 2026-08-30
 
 ### Added

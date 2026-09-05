@@ -7,9 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.4] - 2026-09-05
+
+### Added
+
+- **Daily wallpaper update.** On the first open of a new day the wallpaper aligns itself to the current head of the Bing pool for the active language market — previously it stayed on whatever was last set, no matter how old. Pinned collection wallpapers are never overridden, a same-day manual "change wallpaper" is respected, and a new day re-aligns automatically. Alignment self-heals: it is retried every 10 minutes and whenever the tab regains focus until it succeeds.
+- **"Follow system" language option.** The language setting now defaults to following the browser language; choosing 中文 / English pins it explicitly and can be reset back to "Follow system" at any time.
+
+### Changed
+
+- **Wallpaper module rewritten for first-frame speed.** The four-layer storage stack (IndexedDB blob gallery, 32px blur fallback image, chrome.storage wallpaper pointer and the preload state machine) is replaced by a single synchronous localStorage path: `boot.js` paints the full-resolution image before the first frame and React reads the exact same bytes synchronously — opening a new tab no longer flashes, blurs or waits on any async storage. "Change wallpaper" stays instant via an idle-time prefetch of the next pool image.
+- **Wallpaper switches never show a blank frame.** The old image always stays underneath while the new one downloads and decodes; the 700 ms cross-fade runs only after the new pixels are fully ready. If local bytes are missing (first install), the remote URL is used as the display source so the wallpaper area never falls back to a plain colour while loading.
+- **HD favicons enabled by default.** The optional `<all_urls>` permission is only exercised when granted; without it icon loading silently falls back to the standard sources. Users who explicitly turned HD icons off keep that choice.
+- **The wallpaper market follows the language setting.** Switching the UI language re-aligns the wallpaper to that market's current daily image (zh-CN → Bing China, en → Bing US), with the same no-blank cross-fade.
+
 ### Fixed
 
 - **Wallpaper date was one day behind.** Bing's `startdate` is a US-Pacific calendar day and is identical for every `mkt` (verified against zh-CN / en-US / ja-JP / en-GB / en-AU / en-IN / de-DE), while the daily image rolls over at the user's local midnight. East of UTC-7 that left today's wallpaper labelled with yesterday's date for most of the local day, contradicting the header clock. The whole image pool is now shifted onto the user's local calendar (offset derived from `pool[0]`, capped at ±1 day so a stale pool is never rewritten), for both freshly fetched and cached pools. Existing snapshots self-heal on the next open; wallpapers already saved to the collection keep the date they were saved with.
+- **Wallpaper could stick to an old image after a language change.** The daily alignment previously ran against every pool in parallel (initialisation and language switching raced, last writer won) and could mistake a previous-day photo for "already up to date" because same photos across markets normalise to the same id. Alignment now runs on a single path driven by the effective language, only on fresh pools, and the aligned head is recorded as `date|image-id` so a new day or a market change always re-aligns.
 
 ## [0.6.3] - 2026-08-30
 

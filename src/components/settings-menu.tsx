@@ -38,7 +38,7 @@ export function SettingsMenu({
   const ref = React.useRef<HTMLDivElement | null>(null);
   const fileRef = React.useRef<HTMLInputElement | null>(null);
   const [hiRes, setHiRes] = React.useState(true);
-  const { t, locale, setLocale } = useI18n();
+  const { t, locale, localeSetting, setLocale } = useI18n();
   // 同步读取「开启动效」开关（当前页已挂载，仅影响下次打开）
   const [entrance, setEntrance] = React.useState(() => readEntrance());
 
@@ -184,9 +184,10 @@ export function SettingsMenu({
             </p>
             <SegmentedControl
               ariaLabel={t("settings.language")}
-              value={locale}
+              value={localeSetting}
               onChange={setLocale}
               options={[
+                { key: "system", label: t("language.system") },
                 { key: "zh-CN", label: t("language.chinese") },
                 { key: "en", label: t("language.english") },
               ]}

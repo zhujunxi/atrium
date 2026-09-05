@@ -24,6 +24,7 @@ export const zhCN: Dict = {
   "settings.rotateInterval": "间隔",
   "settings.dimMask": "壁纸遮罩",
 
+  "language.system": "跟随系统",
   "language.chinese": "中文",
   "language.english": "English",
 

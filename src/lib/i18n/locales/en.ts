@@ -24,6 +24,7 @@ export const en: Dict = {
   "settings.rotateInterval": "Interval",
   "settings.dimMask": "Wallpaper overlay",
 
+  "language.system": "Auto",
   "language.chinese": "中文",
   "language.english": "English",
 

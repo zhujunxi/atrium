@@ -1,5 +1,8 @@
 export type Locale = "en" | "zh-CN";
 
+/** 语言设置项：跟系统（默认，不落盘）或显式选择的某种语言 */
+export type LocaleSetting = Locale | "system";
+
 /** Every translatable key lives here so both dictionaries and `t()` are type-checked. */
 export const KEYS = [
   // Appearance
@@ -26,6 +29,7 @@ export const KEYS = [
   "settings.rotateInterval",
   "settings.dimMask",
   // Language switcher
+  "language.system",
   "language.chinese",
   "language.english",
   // Toasts

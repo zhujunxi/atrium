@@ -5,7 +5,7 @@ import { useI18n } from "@/lib/i18n";
 import {
   loadWallpaperSettings,
   saveWallpaperSettings,
-} from "@/lib/wallpaper-store";
+} from "@/lib/wallpaper";
 import type { WallpaperSettings } from "@/lib/types";
 
 const INTERVALS = [5, 15, 30, 60];

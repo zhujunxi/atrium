@@ -9,10 +9,14 @@ import {
 
 const HI_RES_KEY = "hi-res-favicon";
 
-/** 高清图标解析开关（默认关闭：需 <all_urls> 可选权限，默认零主机权限更隐私友好） */
+/**
+ * 高清图标解析开关（默认开启）。
+ * 需要 <all_urls> 可选权限：权限未授予时后台抓取会静默失败，自动退化到
+ * 低清候选链，无副作用；用户在设置里关闭后写入 "0"，保持关闭。
+ */
 export function isHiResEnabled(): boolean {
   if (typeof localStorage === "undefined") return false;
-  return localStorage.getItem(HI_RES_KEY) === "1";
+  return localStorage.getItem(HI_RES_KEY) !== "0";
 }
 
 export function setHiResEnabled(on: boolean) {

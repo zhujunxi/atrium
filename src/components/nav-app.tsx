@@ -334,10 +334,11 @@ export function NavApp({
 
   const panelRef = React.useRef<HTMLDivElement | null>(null);
   const viewportRef = React.useRef<HTMLDivElement | null>(null);
-  const trackRef = React.useRef<HTMLDivElement | null>(null);
   const pagerRef = React.useRef<LaunchpadPager | null>(null);
   /** 背景/触控横扫的翻页手势 */
   const panRef = React.useRef<{ id: number; startX: number; moved: boolean } | null>(null);
+  /** 传统鼠标滚轮逐格翻页的节流状态（触控板横滑不走这里） */
+  const mouseWheelRef = React.useRef({ at: 0, direction: 0 });
   /** 编辑模式拖图标到屏幕边缘的驻留计时 */
   const edgeRef = React.useRef<{ dir: number; since: number }>({ dir: 0, since: 0 });
   /** 翻页手势后抑制 main 的「点空白退出编辑」 */
@@ -640,17 +641,17 @@ export function NavApp({
           window.clearTimeout(p.timer);
           p.timer = null;
         }
-        // 非编辑态下的移动视为滚动/误触，取消本次按压
+        // 非编辑态下横向移动移交给分页器。触控、鼠标都适用：图标区域
+        // 也应当能按住横拖翻页，而不是只有空白处才能拖。
         if (!p.lp && !editRef.current) {
-          // 触控横向滑动 → 移交给翻页（跟手），与 Launchpad 一致
           const dx = e.clientX - p.x;
           const dy = e.clientY - p.y;
           if (
-            e.pointerType === "touch" &&
             pageCountRef.current > 1 &&
             !openFolderRef.current &&
             Math.abs(dx) > Math.abs(dy)
           ) {
+            e.preventDefault();
             pagerRef.current?.beginDrag(p.x);
             pagerRef.current?.moveDrag(e.clientX);
             panRef.current = { id: e.pointerId, startX: p.x, moved: true };
@@ -839,16 +840,12 @@ export function NavApp({
 
   /* ---------- Launchpad 分页 ---------- */
 
-  // 挂载物理分页器：直接操作 track 的 transform，页码变化回报给 React。
-  // 注：翻页运动期间不再降级液态玻璃——会动的只有文件夹图标(scale=8 很轻量)，
-  // 搜索框/设置齿轮在静止的 <main> 里，背景不变、折射零成本，故全程保持真折射，
-  // 既无「闪一下」也无停手时的边缘位移差。
+  // 挂载分页轨道。高频输入只写轨道 transform，React 仅接收页码变化。
   React.useEffect(() => {
     const vp = viewportRef.current;
-    const track = trackRef.current;
-    if (!vp || !track) return;
+    if (!vp) return;
     const pager = new LaunchpadPager();
-    pager.attach(track, (p) => setPage(p));
+    pager.attach(vp, (p) => setPage(p));
     pagerRef.current = pager;
     pager.setLayout(pageCountRef.current, vp.clientWidth);
     const ro = new ResizeObserver(() => {
@@ -909,7 +906,8 @@ export function NavApp({
     };
   }, []);
 
-  // 触控板双指横滑 / 鼠标横滚：跟手 + 惯性吸附；preventDefault 阻断浏览器前进/后退手势
+  // 双指横滑完全不监听、不干预，让浏览器原生滚动和 CSS snap 在合成器中完成。
+  // 这里只补传统纵向鼠标滚轮逐格翻页。
   React.useEffect(() => {
     const vp = viewportRef.current;
     if (!vp) return;
@@ -918,11 +916,23 @@ export function NavApp({
       const scale = e.deltaMode === 1 ? 16 : 1;
       const dx = e.deltaX * scale;
       const dy = e.deltaY * scale;
-      if (dx === 0 || Math.abs(dx) <= Math.abs(dy)) return;
-      e.preventDefault();
-      pagerRef.current?.feedWheel(dx);
+      if (Math.abs(dx) > Math.abs(dy) && dx !== 0) {
+        return;
+      }
+      // Chrome 对常见鼠标滚轮通常给出约 ±100px；deltaMode 非 pixel
+      // 也可确定是离散滚轮。用较保守的门槛与短节流区分触控板 deltaY。
+      const coarseMouseWheel = e.deltaMode !== 0 || Math.abs(dy) >= 40;
+      if (!coarseMouseWheel || dy === 0) return;
+      const direction = Math.sign(dy);
+      const now = performance.now();
+      const previous = mouseWheelRef.current;
+      if (direction !== previous.direction || now - previous.at > 180) {
+        mouseWheelRef.current = { at: now, direction };
+        pagerRef.current?.goTo(pageRef.current + direction);
+      }
     }
-    vp.addEventListener("wheel", onWheel, { passive: false });
+    // 必须 passive，Chrome 才能让触控板滚动留在合成器线程，不被主线程监听器阻塞。
+    vp.addEventListener("wheel", onWheel, { passive: true });
     return () => vp.removeEventListener("wheel", onWheel);
   }, []);
 
@@ -937,7 +947,9 @@ export function NavApp({
       )
         return;
       if (openFolderRef.current || dialogOpenRef.current || pageCountRef.current < 2) return;
-      pagerRef.current?.goTo(pageRef.current + (e.key === "ArrowLeft" ? -1 : 1));
+      // 连续按键不能依赖 React 尚未刷新的 page state；直接读取分页器当前目标页。
+      const pager = pagerRef.current;
+      pager?.goTo(pager.currentPage + (e.key === "ArrowLeft" ? -1 : 1));
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -1273,15 +1285,15 @@ export function NavApp({
           ref={viewportRef}
           onPointerDown={handleViewportPointerDown}
           className={cn(
-            "relative -mx-4 -my-1 flex min-h-0 flex-1 flex-col overflow-hidden py-2 [touch-action:pan-y] sm:-mx-6 lg:-mx-8",
+            "lp-viewport relative -mx-4 -my-1 flex min-h-0 flex-1 snap-x snap-mandatory flex-col overflow-x-auto overflow-y-hidden py-2 [overscroll-behavior-x:contain] [touch-action:pan-y] sm:-mx-6 lg:-mx-8",
             searching && "hidden"
           )}
         >
-          <div ref={trackRef} className="flex h-full min-h-0 flex-1 will-change-transform">
+          <div className="flex h-full min-h-0 min-w-full flex-1">
             {pages.map((pageItems, pi) => (
               <div
                 key={pi}
-                className="flex h-full w-full shrink-0 items-center justify-center px-4 sm:px-6 lg:px-8"
+                className="flex h-full w-full shrink-0 snap-start snap-always items-center justify-center px-4 sm:px-6 lg:px-8"
               >
                 <div className="mx-auto grid w-full max-w-none grid-cols-4 gap-x-8 gap-y-8 sm:grid-cols-6 lg:grid-cols-6 lg:max-w-6xl xl:grid-cols-8 xl:[--lp-icon:72px] 2xl:[--lp-icon:80px] xl:gap-x-14 xl:gap-y-12">
                   {pageItems.map((it, i) => (

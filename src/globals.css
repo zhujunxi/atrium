@@ -303,6 +303,14 @@
   background: transparent;
 }
 
+/* 触控板分页保留原生横向滚动，视觉上不显示浏览器滚动条。 */
+.lp-viewport {
+  scrollbar-width: none;
+}
+.lp-viewport::-webkit-scrollbar {
+  display: none;
+}
+
 /* ============================================================
    入场动效（iPadOS 解锁式）：壁纸落幅 + 图标波浪物化 + 界面元素淡入
    - 全部仅动 transform / opacity（合成器友好，不触发重排）

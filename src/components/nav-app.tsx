@@ -867,7 +867,10 @@ export function NavApp({
 
   // 背景按下：空白处按住拖动 = 翻页手势（图标各自处理自己的按下，互不干扰）
   function handleViewportPointerDown(e: React.PointerEvent) {
-    if (e.button !== 0 || panRef.current) return;
+    if (e.button !== 0) return;
+    // 同一指针的新按下必然是新手势（万一漏了 pointerup 也能自愈，不会一直拖不动）；
+    // 只有「另一根手指」的按下才忽略，避免打断已经进行中的手势。
+    if (panRef.current && panRef.current.id !== e.pointerId) return;
     if (pageCountRef.current < 2) return;
     const t = e.target as HTMLElement;
     if (t.closest("[data-lp-id],[data-lp-add],input,button,a,select,textarea")) return;
@@ -880,6 +883,8 @@ export function NavApp({
     function onMove(e: PointerEvent) {
       const pan = panRef.current;
       if (!pan || e.pointerId !== pan.id) return;
+      // 只按横向位移跟手：纵向分量不参与，也不做轴向「作废」判定——
+      // 鼠标按下本身常带几像素抖动，一旦在这里判定轴向，横拖会被误杀。
       if (!pan.moved && Math.abs(e.clientX - pan.startX) > 4) pan.moved = true;
       pagerRef.current?.moveDrag(e.clientX);
     }
@@ -906,6 +911,24 @@ export function NavApp({
     };
   }, []);
 
+  // 窗口失焦（切窗口、开 DevTools 等）后浏览器不会再补 pointerup，
+  // 手势状态会卡住导致「按住左键拖不动」；这里主动收尾，保证下一次按下可用。
+  React.useEffect(() => {
+    function onBlur() {
+      const p = pressRef.current;
+      if (p) {
+        if (p.timer) window.clearTimeout(p.timer);
+        pressRef.current = null;
+      }
+      if (panRef.current) {
+        panRef.current = null;
+        pagerRef.current?.endDrag();
+      }
+    }
+    window.addEventListener("blur", onBlur);
+    return () => window.removeEventListener("blur", onBlur);
+  }, []);
+
   // 双指横滑完全不监听、不干预，让浏览器原生滚动和 CSS snap 在合成器中完成。
   // 这里只补传统纵向鼠标滚轮逐格翻页。
   React.useEffect(() => {
@@ -917,6 +940,7 @@ export function NavApp({
       const dx = e.deltaX * scale;
       const dy = e.deltaY * scale;
       if (Math.abs(dx) > Math.abs(dy) && dx !== 0) {
+        pagerRef.current?.feedNativeWheel(dx);
         return;
       }
       // Chrome 对常见鼠标滚轮通常给出约 ±100px；deltaMode 非 pixel
@@ -1152,7 +1176,7 @@ export function NavApp({
       />
 
       <main
-        className="flex flex-1 flex-col space-y-12 px-4 pb-24 sm:px-6 lg:px-8"
+        className="flex flex-1 flex-col space-y-12 px-4 pb-24 sm:px-6 lg:px-8 [overflow-x:clip]"
         onClick={(e) => {
           // 编辑模式下点击空白处完成
           if (!edit) return;
@@ -1285,7 +1309,7 @@ export function NavApp({
           ref={viewportRef}
           onPointerDown={handleViewportPointerDown}
           className={cn(
-            "lp-viewport relative -mx-4 -my-1 flex min-h-0 flex-1 snap-x snap-mandatory flex-col overflow-x-auto overflow-y-hidden py-2 [overscroll-behavior-x:contain] [touch-action:pan-y] sm:-mx-6 lg:-mx-8",
+            "lp-viewport relative -mx-4 -my-1 flex min-h-0 flex-1 snap-x snap-mandatory flex-col overflow-x-auto overflow-y-hidden py-2 [overscroll-behavior-x:none] [touch-action:pan-y] sm:-mx-6 lg:-mx-8",
             searching && "hidden"
           )}
         >

@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-09-18
+
+### Changed
+
+- **Pagination rebuilt on native scrolling.** The launchpad no longer intercepts trackpad wheel events (the custom momentum path with `preventDefault` is gone): the viewport is a real `overflow-x` scroller with CSS `scroll-snap`, so a two-finger swipe runs entirely on the compositor — no main-thread listener to block it, and the browser's own momentum and snapping. The pager now only syncs the page number, jumps discretely, and drives drag plus the rubber-band. The scrollbar is hidden (`.lp-viewport`) so the clean look is preserved.
+- **Mouse drag pages from anywhere on the grid.** Pressing and dragging horizontally pages from anywhere on the page — including on top of icons — instead of only the empty background, matching touch. Vertical drags are unaffected, an open folder still swallows the gesture, and the drag axis is decided by horizontal travel alone (a mouse press carries a few pixels of jitter, so judging the axis up front used to kill horizontal drags).
+- **A traditional mouse wheel steps exactly one page.** A discrete wheel (`deltaMode ≠ 0` or `|deltaY| ≥ 40`) advances one page per notch, throttled to 180 ms per direction so a fast flick cannot skip pages; trackpad deltas are left entirely to native scrolling.
+
+### Fixed
+
+- **The edge rubber-band no longer bounces twice.** The over-scroll displacement is written on the **scroll container** instead of the content: transforming the content grows/shrinks the container's scrollable overflow area, so the browser re-clamped and re-snapped the last page — that was the "it already snapped back, then bounced once more". It is now an explicit `idle → pulling → returning` state machine with a damped displacement (52 px max), new pushes swallowed while returning, and a return animation without overshoot.
+- **No more half-second stall before the rubber-band returns.** macOS keeps delivering momentum-tail events for a few hundred ms after the fingers lift, and waiting for them to go silent made the release feel stuck. Release is now detected from the push force itself (peak force, a drop to 65% of it, three consecutive falling samples) and the rest of that gesture's tail is ignored, so the snap-back starts the moment the fingers leave.
+- **A stuck gesture could disable paging until reload.** Losing focus mid-drag (switching apps, opening DevTools) meant Chrome never delivered the matching `pointerup`, leaving the pager permanently "dragging" so press-and-drag stopped working. A window `blur` handler now settles the gesture, and a new `pointerdown` from the same pointer always starts a fresh one.
+- **Press-and-drag no longer jumps when it starts mid-animation.** Starting a drag while a page flip was still running could measure the release from a half-page offset and snap in the wrong direction; the drag baseline now lands on the current whole page first, and the release point can never be opposite to the drag direction.
+- **Rapid arrow-key paging is no longer dropped.** Arrow paging read the page number from React state, which had not re-rendered yet, so quick presses repeated or skipped a page. It now reads the pager's current target page directly.
+
 ## [0.6.4] - 2026-09-05
 
 ### Added
